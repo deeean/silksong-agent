@@ -1,0 +1,33 @@
+[project]
+name = "silksong-agent"
+version = "0.1.0"
+description = ""
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "gymnasium>=1.2.1",
+    "ipython>=9.6.0",
+    "matplotlib>=3.10.7",
+    "numpy>=2.2.6",
+    "pygame>=2.6.1",
+    "python-dotenv>=1.2.1",
+    "rich>=14.2.0",
+    "sb3-contrib>=2.7.0",
+    "stable-baselines3>=2.7.0",
+    "tbparse>=0.0.9",
+    "tensorboard>=2.20.0",
+    "torch>=2.9.0",
+    "torchaudio>=2.9.0",
+    "torchvision>=0.24.0",
+    "tqdm>=4.67.1",
+]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128" }]
+torchvision = [{ index = "pytorch-cu128" }]
+torchaudio = [{ index = "pytorch-cu128" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true

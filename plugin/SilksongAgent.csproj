@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>SilksongAgent</AssemblyName>
+    <Product>SilksongAgent</Product>
+    <Version>1.0.0</Version>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>latest</LangVersion>
+    <RestoreAdditionalProjectSources>
+      https://api.nuget.org/v3/index.json;
+      https://nuget.bepinex.dev/v3/index.json;
+      https://nuget.samboy.dev/v3/index.json
+    </RestoreAdditionalProjectSources>
+    <RootNamespace>SilksongAgent</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BepInEx.Analyzers" Version="1.*" PrivateAssets="all" />
+    <PackageReference Include="BepInEx.Core" Version="5.*" />
+    <PackageReference Include="BepInEx.PluginInfoProps" Version="2.*" />
+    <PackageReference Include="UnityEngine.Modules" Version="6000.0.50" IncludeAssets="compile" />
+    <PackageReference Include="Silksong.GameLibs" Version="1.1.0-silksong1.0.29242" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="References/**/*.cs" />
+    <None Include="References/**/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="References\" />
+    <Folder Include="testdata\" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <SilksongPluginPath1 Condition="'$(SILKSONG_PATH_1)' != ''">$([System.IO.Path]::GetDirectoryName($(SILKSONG_PATH_1)))/BepInEx/plugins</SilksongPluginPath1>
+    <SilksongPluginPath2 Condition="'$(SILKSONG_PATH_2)' != ''">$([System.IO.Path]::GetDirectoryName($(SILKSONG_PATH_2)))/BepInEx/plugins</SilksongPluginPath2>
+    <SilksongPluginPath3 Condition="'$(SILKSONG_PATH_3)' != ''">$([System.IO.Path]::GetDirectoryName($(SILKSONG_PATH_3)))/BepInEx/plugins</SilksongPluginPath3>
+    <SilksongPluginPath4 Condition="'$(SILKSONG_PATH_4)' != ''">$([System.IO.Path]::GetDirectoryName($(SILKSONG_PATH_4)))/BepInEx/plugins</SilksongPluginPath4>
+  </PropertyGroup>
+
+  <Target Name="Copy" AfterTargets="Build">
+    <Copy Condition="'$(SilksongPluginPath1)' != ''" SourceFiles="$(TargetPath);$(TargetDir)/$(TargetName).pdb" DestinationFolder="$(SilksongPluginPath1)"/>
+    <Copy Condition="'$(SilksongPluginPath2)' != ''" SourceFiles="$(TargetPath);$(TargetDir)/$(TargetName).pdb" DestinationFolder="$(SilksongPluginPath2)"/>
+    <Copy Condition="'$(SilksongPluginPath3)' != ''" SourceFiles="$(TargetPath);$(TargetDir)/$(TargetName).pdb" DestinationFolder="$(SilksongPluginPath3)"/>
+    <Copy Condition="'$(SilksongPluginPath4)' != ''" SourceFiles="$(TargetPath);$(TargetDir)/$(TargetName).pdb" DestinationFolder="$(SilksongPluginPath4)"/>
+  </Target>
+</Project>

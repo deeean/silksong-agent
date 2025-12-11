@@ -1,0 +1,15 @@
+.idea
+.DS_Store
+.claude
+.venv
+.env
+*.pyc
+__pycache__/
+nul
+!.env.example
+Directory.Build.props
+!Directory.Build.props.example
+obj/
+bin/
+logs/
+models/
