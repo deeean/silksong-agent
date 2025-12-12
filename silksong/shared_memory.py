@@ -14,6 +14,8 @@ from silksong.constants import (
     PLAYER_MAX_SILK,
     BOSS_MAX_HEALTH,
     NUM_BOSS_ATTACK_STATES,
+    NUM_RAYS,
+    NUM_HIT_TYPES,
     ARENA_MIN_X,
     ARENA_MAX_X,
     ARENA_MIN_Y,
@@ -166,12 +168,15 @@ class GameState:
 
         state_obs.extend(boss_attack_one_hot)
 
-        num_hit_types = 5
-        normalized_hit_types = self.raycast_hit_types.astype(np.float32) / (num_hit_types - 1)
+        hit_types_one_hot = np.zeros((NUM_RAYS, NUM_HIT_TYPES), dtype=np.float32)
+        for i, hit_type in enumerate(self.raycast_hit_types):
+            hit_type_idx = int(hit_type)
+            if 0 <= hit_type_idx < NUM_HIT_TYPES:
+                hit_types_one_hot[i, hit_type_idx] = 1.0
 
         raycast_obs = np.concatenate([
             self.raycast_distances,
-            normalized_hit_types
+            hit_types_one_hot.flatten()
         ])
 
         observe = np.concatenate([

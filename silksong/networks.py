@@ -13,11 +13,8 @@ class MultiHeadFeatureExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space, features_dim: int = 256):
         super().__init__(observation_space, features_dim)
 
-        self.state_dim = STATE_DIM
-        self.raycast_dim = RAYCAST_DIM
-
         self.state_branch = nn.Sequential(
-            nn.Linear(self.state_dim, 128),
+            nn.Linear(STATE_DIM, 128),
             nn.ReLU(),
             nn.LayerNorm(128),
             nn.Linear(128, 128),
@@ -25,14 +22,14 @@ class MultiHeadFeatureExtractor(BaseFeaturesExtractor):
         )
 
         self.raycast_branch = nn.Sequential(
-            nn.Linear(self.raycast_dim, 128),
+            nn.Linear(RAYCAST_DIM, 128),
             nn.ReLU(),
             nn.LayerNorm(128),
             nn.Linear(128, 128),
             nn.ReLU(),
         )
 
-        combined_dim = 128 + 128
+        combined_dim = 256
         self.combined = nn.Sequential(
             nn.Linear(combined_dim, 256),
             nn.ReLU(),
@@ -42,8 +39,8 @@ class MultiHeadFeatureExtractor(BaseFeaturesExtractor):
         )
 
     def forward(self, observations: torch.Tensor) -> torch.Tensor:
-        state_obs = observations[:, :self.state_dim]
-        raycast_obs = observations[:, self.state_dim:]
+        state_obs = observations[:, :STATE_DIM]
+        raycast_obs = observations[:, STATE_DIM:]
 
         state_features = self.state_branch(state_obs)
         raycast_features = self.raycast_branch(raycast_obs)
