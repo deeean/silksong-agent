@@ -122,7 +122,7 @@ To train on other bosses, you need to modify the following files:
 
 ## TODO
 
-- [ ] Optimize FindObjectsByType usage in ProjectileTrackerManager if a faster method exists
+- [ ] Optimize FindObjectsByType usage in BossProjectileManager if a faster method exists
 - [ ] Test if Raycast hit type needs one-hot encoding
 
 ## Acknowledgments
