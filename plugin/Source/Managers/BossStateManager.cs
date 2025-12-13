@@ -32,6 +32,9 @@ public static class BossStateManager
         { "Crossup Antic", BossAttackState.CrossSlashAntic },
         { "Slash Slam", BossAttackState.CrossSlashAttack },
         { "Bounce Back", BossAttackState.Teleport },
+        { "Slash End", BossAttackState.SlashEnd },
+        { "Fall", BossAttackState.Fall },
+        { "Steam Damage", BossAttackState.SteamDamage },
     };
 
     private static readonly (string prefix, BossAttackState state)[] PrefixStateMap =
@@ -54,6 +57,8 @@ public static class BossStateManager
         ("Tele", BossAttackState.Teleport),
         ("P2 Shift", BossAttackState.PhaseTransition),
         ("P3 Roar", BossAttackState.PhaseTransition),
+        ("Multihit Slash", BossAttackState.MultihitSlash),
+        ("Multihitting", BossAttackState.Multihitting),
     };
 
     public static int CurrentPhase => currentBossPhase;
@@ -150,6 +155,7 @@ public static class BossStateManager
                 return state;
         }
 
+        Plugin.Logger.LogWarning($"[BossStateManager] Unmapped boss state: '{stateName}'");
         return BossAttackState.Unknown;
     }
 }

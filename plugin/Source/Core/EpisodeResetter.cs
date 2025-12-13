@@ -9,7 +9,11 @@ public static class EpisodeResetter
     public static IEnumerator ResetEpisode()
     {
         Plugin.IsReady = false;
-        ActionManager.IsAgentControlEnabled = true;
+
+        if (!CommandLineArgs.Manual)
+        {
+            ActionManager.IsAgentControlEnabled = true;
+        }
 
         BossStateManager.ResetBoss();
 
@@ -72,10 +76,7 @@ public static class EpisodeResetter
             yield return new WaitForEndOfFrame();
         }
 
-        for (int i = 0; i < Constants.ConsecutiveFrameThreshold; i++)
-        {
-            yield return new WaitForEndOfFrame();
-        }
+        yield return new WaitForEndOfFrame();
 
         BossStateManager.FindBoss();
 

@@ -10,7 +10,7 @@ load_dotenv(Path(__file__).parent / ".env")
 import numpy as np
 import torch
 import torch.nn as nn
-from sb3_contrib import RecurrentPPO
+from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNormalize
@@ -18,17 +18,17 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNorm
 from silksong import SilksongBossEnv, MultiHeadFeatureExtractor, TensorboardCallback
 
 
-def _make_env(env_id: int, time_scale: float = 1.0):
-    env = SilksongBossEnv(env_id, time_scale=time_scale)
+def _make_env(env_id: int, time_scale: float = 1.0, nofx: bool = False):
+    env = SilksongBossEnv(env_id, time_scale=time_scale, nofx=nofx)
     env = Monitor(env)
     return env
 
 
-def create_vec_env(n_envs: int = 1, time_scale: float = 1.0):
+def create_vec_env(n_envs: int = 1, time_scale: float = 1.0, nofx: bool = False):
     if n_envs < 1 or n_envs > 4:
         raise ValueError(f"n_envs must be between 1 and 4, got {n_envs}")
 
-    env_fns = [partial(_make_env, env_id=i+1, time_scale=time_scale) for i in range(n_envs)]
+    env_fns = [partial(_make_env, env_id=i+1, time_scale=time_scale, nofx=nofx) for i in range(n_envs)]
 
     if n_envs > 1:
         return SubprocVecEnv(env_fns, start_method='spawn')
@@ -53,6 +53,7 @@ def train(
     checkpoint_path: str = None,
     n_envs: int = 1,
     time_scale: float = 4.0,
+    nofx: bool = False,
     device: Union[torch.device, str] = "cuda" if torch.cuda.is_available() else "cpu",
 ):
     resuming = checkpoint_path and os.path.exists(checkpoint_path)
@@ -74,12 +75,13 @@ def train(
     print(f"Learning rate: {learning_rate}")
     print(f"Parallel environments: {n_envs}")
     print(f"Time scale: {time_scale}")
+    print(f"NoFx: {nofx}")
     print(f"Log directory: {log_dir}")
     print(f"Save directory: {save_dir}")
     print("=" * 60)
 
     print(f"\nLaunching {n_envs} game instance(s)...")
-    env = create_vec_env(n_envs=n_envs, time_scale=time_scale)
+    env = create_vec_env(n_envs=n_envs, time_scale=time_scale, nofx=nofx)
 
     vecnormalize_path = checkpoint_path.replace(".zip", "_vecnormalize.pkl") if checkpoint_path else None
     if resuming and vecnormalize_path and os.path.exists(vecnormalize_path):
@@ -90,18 +92,14 @@ def train(
 
     policy_kwargs = dict(
         features_extractor_class=MultiHeadFeatureExtractor,
-        features_extractor_kwargs=dict(features_dim=128),
-        lstm_hidden_size=128,
-        n_lstm_layers=1,
-        shared_lstm=False,
-        enable_critic_lstm=True,
+        features_extractor_kwargs=dict(features_dim=256),
         net_arch=dict(pi=[128], vf=[128]),
         activation_fn=nn.ReLU,
     )
 
     if resuming:
         print(f"\nLoading model from checkpoint: {checkpoint_path}")
-        model = RecurrentPPO.load(
+        model = PPO.load(
             checkpoint_path,
             env=env,
             learning_rate=learning_rate,
@@ -119,9 +117,9 @@ def train(
             device=device,
         )
     else:
-        print("\nInitializing new RecurrentPPO model...")
-        model = RecurrentPPO(
-            policy="MlpLstmPolicy",
+        print("\nInitializing new PPO model...")
+        model = PPO(
+            policy="MlpPolicy",
             env=env,
             learning_rate=learning_rate,
             n_steps=n_steps,
@@ -144,7 +142,7 @@ def train(
     print(model.policy)
 
     checkpoint_callback = CheckpointCallback(
-        save_freq=int(n_steps / 2),
+        save_freq=10000,
         save_path=save_dir,
         name_prefix="rl_model",
         save_vecnormalize=True,
@@ -198,8 +196,8 @@ def evaluate(model_path: str, n_episodes: int = 10, time_scale: float = 1.0):
     else:
         env = VecNormalize(env, norm_obs=False, norm_reward=False, training=False)
 
-    print(f"Loading RecurrentPPO model from: {model_path}")
-    model = RecurrentPPO.load(model_path, env=env)
+    print(f"Loading PPO model from: {model_path}")
+    model = PPO.load(model_path, env=env)
     print("Model loaded successfully!")
 
     episode_rewards = []
@@ -211,20 +209,11 @@ def evaluate(model_path: str, n_episodes: int = 10, time_scale: float = 1.0):
         episode_reward = 0
         episode_length = 0
 
-        lstm_states = None
-        episode_start = np.ones((1,), dtype=bool)
-
         while not done:
-            action, lstm_states = model.predict(
-                obs,
-                state=lstm_states,
-                episode_start=episode_start,
-                deterministic=True
-            )
+            action, _ = model.predict(obs, deterministic=True)
             obs, reward, done, info = env.step(action)
             episode_reward += reward[0]
             episode_length += 1
-            episode_start = done
 
         episode_rewards.append(episode_reward)
         episode_lengths.append(episode_length)
@@ -257,17 +246,18 @@ if __name__ == "__main__":
         train(
             total_timesteps=10_000_000,
             learning_rate=1e-4,
-            n_steps=8192,
-            batch_size=4096,
+            n_steps=2048,
+            batch_size=2048,
             n_epochs=4,
             gamma=0.99,
             gae_lambda=0.95,
             clip_range=0.1,
-            ent_coef=0.01,
+            ent_coef=0.03,
             vf_coef=0.5,
             max_grad_norm=0.3,
             checkpoint_path=args.checkpoint,
             device="cuda",
             n_envs=args.n_envs,
             time_scale=4.0,
+            nofx=True,
         )

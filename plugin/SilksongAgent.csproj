@@ -24,8 +24,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Remove="References/**/*.cs" />
-    <None Include="References/**/*.cs" />
+    <Compile Remove="Reference/**/*.cs" />
+    <None Include="Reference/**/*.cs" />
   </ItemGroup>
 
   <ItemGroup>

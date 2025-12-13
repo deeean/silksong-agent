@@ -9,7 +9,8 @@ public enum RaycastHitType
     Terrain = 1,
     Enemy = 2,
     Projectile = 3,
-    Hazard = 4
+    Hazard = 4,
+    BossProjectile = 5
 }
 
 public struct RaycastResult
@@ -67,7 +68,7 @@ public static class RaycastSensor
             if (bossProjectileDistance < closestDistance)
             {
                 closestDistance = bossProjectileDistance;
-                hitType = RaycastHitType.Projectile;
+                hitType = RaycastHitType.BossProjectile;
             }
 
             for (int j = 0; j < hitCount; j++)
