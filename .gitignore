@@ -9,7 +9,10 @@ nul
 !.env.example
 Directory.Build.props
 !Directory.Build.props.example
+Folder.DotSettings.user
 obj/
 bin/
 logs/
 models/
+Reference/
+*.csv

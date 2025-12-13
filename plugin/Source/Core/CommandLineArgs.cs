@@ -7,6 +7,7 @@ public static class CommandLineArgs
     public static int Id { get; private set; } = 0;
     public static float TimeScale { get; private set; } = 1.0f;
     public static bool Manual { get; private set; } = false;
+    public static bool NoFx { get; private set; } = false;
 
     public static void Parse()
     {
@@ -30,6 +31,10 @@ public static class CommandLineArgs
             else if (args[i] == "-manual")
             {
                 Manual = true;
+            }
+            else if (args[i] == "-nofx")
+            {
+                NoFx = true;
             }
         }
     }

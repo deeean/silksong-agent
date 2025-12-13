@@ -14,7 +14,7 @@ from silksong.constants import (
     PLAYER_MAX_SILK,
     BOSS_MAX_HEALTH,
     NUM_BOSS_ATTACK_STATES,
-    NUM_RAYS,
+    NUM_PLAYER_ANIMATION_STATES,
     NUM_HIT_TYPES,
     ARENA_MIN_X,
     ARENA_MAX_X,
@@ -42,7 +42,7 @@ atexit.register(_cleanup_all)
 
 def _signal_handler(signum, frame):
     _cleanup_all()
-    exit(0)
+    raise KeyboardInterrupt
 
 
 signal.signal(signal.SIGTERM, _signal_handler)
@@ -86,7 +86,12 @@ class BossAttackState(IntEnum):
     TELEPORT = 20
     PHASE_TRANSITION = 21
     QUICK_SLASH_ATTACK = 22
-    UNKNOWN = 23
+    SLASH_END = 23
+    FALL = 24
+    MULTIHIT_SLASH = 25
+    MULTIHITTING = 26
+    STEAM_DAMAGE = 27
+    UNKNOWN = 28
 
 
 @dataclass
@@ -118,8 +123,21 @@ class GameState:
     truncated: bool
     player_can_attack: bool
 
+    player_attacking: bool
+    player_dashing: bool
+    player_jumping: bool
+    player_falling: bool
+    player_focusing: bool
+    player_casting: bool
+    player_recoiling: bool
+    player_wall_sliding: bool
+
     raycast_distances: np.ndarray
     raycast_hit_types: np.ndarray
+
+    player_animation_state: int
+    player_animation_progress: float
+    player_animation_total_frames: float
 
     MAX_DISTANCE = np.sqrt((ARENA_MAX_X - ARENA_MIN_X) ** 2 + (ARENA_MAX_Y - ARENA_MIN_Y) ** 2)
 
@@ -168,15 +186,18 @@ class GameState:
 
         state_obs.extend(boss_attack_one_hot)
 
-        hit_types_one_hot = np.zeros((NUM_RAYS, NUM_HIT_TYPES), dtype=np.float32)
-        for i, hit_type in enumerate(self.raycast_hit_types):
-            hit_type_idx = int(hit_type)
-            if 0 <= hit_type_idx < NUM_HIT_TYPES:
-                hit_types_one_hot[i, hit_type_idx] = 1.0
+        player_anim_one_hot = np.zeros(NUM_PLAYER_ANIMATION_STATES, dtype=np.float32)
+        if 0 <= self.player_animation_state < NUM_PLAYER_ANIMATION_STATES:
+            player_anim_one_hot[self.player_animation_state] = 1.0
+
+        state_obs.extend(player_anim_one_hot)
+        state_obs.append(np.clip(self.player_animation_progress, 0.0, 1.0))
+
+        hit_types_normalized = self.raycast_hit_types / (NUM_HIT_TYPES - 1)
 
         raycast_obs = np.concatenate([
             self.raycast_distances,
-            hit_types_one_hot.flatten()
+            hit_types_normalized
         ])
 
         observe = np.concatenate([
@@ -195,7 +216,7 @@ class SilkSongSharedMemory:
     GAME_STATE_OFFSET = 4
     COMMAND_OFFSET = 1024
 
-    GAME_STATE_FORMAT = 'f' * 9 + 'i' * 7 + 'B' * 8 + 'f' * 32 + 'i' * 32
+    GAME_STATE_FORMAT = 'f' * 9 + 'i' * 7 + 'B' * 16 + 'f' * 32 + 'i' * 32 + 'i' + 'ff'
     GAME_STATE_SIZE = struct.calcsize(GAME_STATE_FORMAT)
 
     MAX_ENVS = 4
@@ -204,9 +225,10 @@ class SilkSongSharedMemory:
     def get_game_path(env_id: int) -> str:
         return os.getenv(f"SILKSONG_PATH_{env_id}")
 
-    def __init__(self, id: int, time_scale: float = 1.0):
+    def __init__(self, id: int, time_scale: float = 1.0, nofx: bool = False):
         self.id = id
         self.time_scale = time_scale
+        self.nofx = nofx
         self.process = None
 
         if id < 1 or id > self.MAX_ENVS:
@@ -232,9 +254,13 @@ class SilkSongSharedMemory:
             self._owns_shm = False
             print(f"[Env {id}] Connected to existing shared memory: {shm_name}")
 
+        args = [game_path, "-id", str(id), "-timescale", str(time_scale)]
+        if nofx:
+            args.append("-nofx")
+
         print(f"[Env {id}] Launching game from: {game_path}")
-        print(f"[Env {id}] Time scale: {time_scale}")
-        self.process = subprocess.Popen([game_path, "-id", str(id), "-timescale", str(time_scale)])
+        print(f"[Env {id}] Time scale: {time_scale}, NoFx: {nofx}")
+        self.process = subprocess.Popen(args)
 
         print(f"[Env {id}] Waiting for game to connect...")
         self.wait_for_state(StateType.READY)
@@ -248,8 +274,8 @@ class SilkSongSharedMemory:
     def read_game_state(self) -> GameState:
         data = struct.unpack_from(self.GAME_STATE_FORMAT, self.shm.buf, offset=self.GAME_STATE_OFFSET)
 
-        raycast_distances = np.array(data[24:56], dtype=np.float32)
-        raycast_hit_types = np.array(data[56:88], dtype=np.float32)
+        raycast_distances = np.array(data[32:64], dtype=np.float32)
+        raycast_hit_types = np.array(data[64:96], dtype=np.float32)
 
         return GameState(
             player_pos_x=data[0],
@@ -276,8 +302,19 @@ class SilkSongSharedMemory:
             terminated=bool(data[21]),
             truncated=bool(data[22]),
             player_can_attack=bool(data[23]),
+            player_attacking=bool(data[24]),
+            player_dashing=bool(data[25]),
+            player_jumping=bool(data[26]),
+            player_falling=bool(data[27]),
+            player_focusing=bool(data[28]),
+            player_casting=bool(data[29]),
+            player_recoiling=bool(data[30]),
+            player_wall_sliding=bool(data[31]),
             raycast_distances=raycast_distances,
             raycast_hit_types=raycast_hit_types,
+            player_animation_state=data[96],
+            player_animation_progress=data[97],
+            player_animation_total_frames=data[98],
         )
 
     def send_command(self, command_type: CommandType,
@@ -302,6 +339,7 @@ class SilkSongSharedMemory:
         struct.pack_into('i', self.shm.buf, offset + 14, 1)
 
     def wait_for_state(self, state_type: StateType):
+        """Polling-based wait for state change."""
         while True:
             current_state = self.read_state()
             if current_state == state_type:

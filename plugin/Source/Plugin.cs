@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using BepInEx;
 using BepInEx.Logging;
+using GlobalEnums;
 using HarmonyLib;
 using UnityEngine;
 
@@ -44,24 +45,35 @@ public class Plugin : BaseUnityPlugin
         DontDestroyOnLoad(bossProjectileManager);
         bossProjectileManager.AddComponent<BossProjectileManager>();
 
+        var noFxManager = new GameObject("NoFxManager");
+        DontDestroyOnLoad(noFxManager);
+        noFxManager.AddComponent<NoFxManager>();
+
         Application.targetFrameRate = -1;
         QualitySettings.vSyncCount = 0;
     }
-    
+
     private void ParseCommandLineArgs()
     {
         CommandLineArgs.Parse();
         InstanceId = CommandLineArgs.Id;
         ActionManager.IsAgentControlEnabled = !CommandLineArgs.Manual;
-        Logger.LogInfo($"Instance ID: {CommandLineArgs.Id}, Time scale: {CommandLineArgs.TimeScale}, Manual: {CommandLineArgs.Manual}");
+        Logger.LogInfo($"Instance ID: {CommandLineArgs.Id}, Time scale: {CommandLineArgs.TimeScale}, Manual: {CommandLineArgs.Manual}, NoFx: {CommandLineArgs.NoFx}");
     }
 
     private void Update()
     {
-        if (StepModeManager.Instance != null && StepModeManager.Instance.IsEnabled) {
-            return;
-        }
+         if (StepModeManager.Instance != null && StepModeManager.Instance.IsEnabled) {
+             return;
+         }
 
-        Time.timeScale = (IsReady || CommandLineArgs.Manual) ? CommandLineArgs.TimeScale : 100.0f;
+         if (CommandLineArgs.Manual)
+         {
+             Time.timeScale = 1.0f;
+         }
+         else
+         {
+             Time.timeScale = IsReady ? CommandLineArgs.TimeScale : 100.0f;
+         }
     }
 }

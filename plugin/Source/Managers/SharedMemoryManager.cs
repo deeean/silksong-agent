@@ -45,7 +45,99 @@ public enum BossAttackState
     Teleport = 20,
     PhaseTransition = 21,
     QuickSlashAttack = 22,
-    Unknown = 23
+    SlashEnd = 23,
+    Fall = 24,
+    MultihitSlash = 25,
+    Multihitting = 26,
+    SteamDamage = 27,
+    Unknown = 28
+}
+
+public enum PlayerAnimationState
+{
+    Idle = 0,
+    Airborne = 1,
+    Land = 2,
+    IdleToRun = 3,
+    RunToIdle = 4,
+    Turn = 5,
+    WoundDoubleStrike = 6,
+    Stun = 7,
+    Recoil = 8,
+    Dash = 9,
+    Sprint = 10,
+    DashToIdle = 11,
+    SlashAlt = 12,
+    SlashLandRunAlt = 13,
+    DashAttackAntic = 14,
+    SlashLand = 15,
+    DashToRun = 16,
+    UpSlash = 17,
+    Slash = 18,
+    DownSpikeAntic = 19,
+    DownSpike = 20,
+    DownspikeRecovery = 21,
+    DownSpikeBounce2 = 22,
+    DownSpikeBounce1 = 23,
+    RecoilTwirl = 24,
+    LandToRun = 25,
+    SkidEnd1 = 26,
+    HarpoonAntic = 27,
+    HarpoonThrow = 28,
+    HarpoonDash = 29,
+    HarpoonCatch = 30,
+    SilkChargeEnd = 31,
+    AirDash = 32,
+    SprintAir = 33,
+    SprintAirLoop = 34,
+    NeedleThrowAnticG = 35,
+    NeedleThrowThrowing = 36,
+    NeedleThrowCatch = 37,
+    DoubleJump = 38,
+    Walljump = 39,
+    WallSlide = 40,
+    DashAttack = 41,
+    DashAttackRecover = 42,
+    SlashToRun = 43,
+    Run = 44,
+    SkidEnd2 = 45,
+    SprintAirShort = 46,
+    MantleCling = 47,
+    MantleVault = 48,
+    SlashLandRun = 49,
+    Wound = 50,
+    HazardRespawn = 51,
+    MantleLand = 52,
+    MantleLandToRun = 53,
+    SprintTurn = 54,
+    NeedleThrowAnticA = 55,
+    UmbrellaInflateAntic = 56,
+    UmbrellaInflate = 57,
+    UmbrellaFloat = 58,
+    DownspikeRecoveryLand = 59,
+    DashDown = 60,
+    ShuttlecockAntic = 61,
+    Shuttlecock = 62,
+    SprintBackflip = 63,
+    UmbrellaDeflate = 64,
+    DashDownLand = 65,
+    UmbrellaTurn = 66,
+    MantleCancelToJump = 67,
+    IdleHurt = 68,
+    LookDown = 69,
+    LookDownEnd = 70,
+    LookUp = 71,
+    LookUpEnd = 72,
+    BindChargeGround = 73,
+    BindBurstGround = 74,
+    BindChargeAir = 75,
+    BindBurstAir = 76,
+    Fall = 77,
+    WallCling = 78,
+    WalljumpAntic = 79,
+    HardLand = 80,
+    Walk = 81,
+    Unknown = 82
 }
 
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -96,8 +188,21 @@ public unsafe struct GameState
     public byte truncated;
     public byte playerCanAttack;
 
+    public byte playerAttacking;
+    public byte playerDashing;
+    public byte playerJumping;
+    public byte playerFalling;
+    public byte playerFocusing;
+    public byte playerCasting;
+    public byte playerRecoiling;
+    public byte playerWallSliding;
+
     public fixed float raycastDistances[32];
     public fixed int raycastHitTypes[32];
+
+    public int playerAnimationState;
+    public float playerAnimationProgress;
+    public float playerAnimationTotalFrames;
 }
 
 public class SharedMemoryManager : MonoBehaviour
@@ -227,6 +332,9 @@ public class SharedMemoryManager : MonoBehaviour
 
     private void Update()
     {
+        if (CommandLineArgs.Manual)
+            return;
+
         ReadCommand();
         ProcessCommand();
     }

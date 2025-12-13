@@ -21,6 +21,9 @@ public class StepModeManager : MonoBehaviour
     
     public void EnableStepMode()
     {
+        if (CommandLineArgs.Manual)
+            return;
+
         isEnabled = true;
         Time.timeScale = 0f;
     }
@@ -44,6 +47,7 @@ public class StepModeManager : MonoBehaviour
         Time.timeScale = 0f;
         SharedMemoryManager.Instance.WriteGameState();
         SharedMemoryManager.Instance.WriteState(StateType.Step);
+        DebugOverlayManager.Instance?.RecordStep();
         isSteppingFrame = false;
     }
 }

@@ -34,6 +34,15 @@ public static class GameStateCollector
             state.playerInvincible = (byte)(player.playerData.isInvincible ? 1 : 0);
             state.playerCanAttack = (byte)(player.CanAttack() ? 1 : 0);
 
+            state.playerAttacking = (byte)(player.cState.attacking ? 1 : 0);
+            state.playerDashing = (byte)(player.cState.dashing ? 1 : 0);
+            state.playerJumping = (byte)(player.cState.jumping ? 1 : 0);
+            state.playerFalling = (byte)(player.cState.falling ? 1 : 0);
+            state.playerFocusing = (byte)(player.cState.focusing ? 1 : 0);
+            state.playerCasting = (byte)(player.cState.casting ? 1 : 0);
+            state.playerRecoiling = (byte)(player.cState.recoiling ? 1 : 0);
+            state.playerWallSliding = (byte)(player.cState.wallSliding ? 1 : 0);
+
             Vector2 playerPos = new Vector2(player.transform.position.x, player.transform.position.y);
             RaycastSensor.PerformRaycast(playerPos, out float[] distances, out RaycastHitType[] hitTypes);
 
@@ -41,6 +50,27 @@ public static class GameStateCollector
             {
                 state.raycastDistances[i] = distances[i] / Constants.MaxRayDistance;
                 state.raycastHitTypes[i] = (int)hitTypes[i];
+            }
+
+            // Animation state
+            if (player.animCtrl != null && player.animCtrl.animator != null)
+            {
+                var animator = player.animCtrl.animator;
+                var clip = animator.CurrentClip;
+                if (clip != null && clip.frames != null)
+                {
+                    state.playerAnimationState = (int)PlayerAnimationMapper.GetAnimationState(clip.name);
+                    state.playerAnimationTotalFrames = clip.frames.Length;
+                    state.playerAnimationProgress = clip.frames.Length > 0
+                        ? (float)animator.CurrentFrame / clip.frames.Length
+                        : 0f;
+                }
+                else
+                {
+                    state.playerAnimationState = (int)PlayerAnimationState.Unknown;
+                    state.playerAnimationProgress = 0f;
+                    state.playerAnimationTotalFrames = 0f;
+                }
             }
         }
 

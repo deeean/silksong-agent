@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace SilksongAgent;
@@ -18,6 +20,13 @@ public class DebugOverlayManager : MonoBehaviour
 
     private Texture2D keyNormalTex;
     private Texture2D keyPressedTex;
+
+    private int stepCount = 0;
+    private float stepTimer = 0f;
+    private float stepsPerSecond = 0f;
+    private bool hasLoggedAnimations = false;
+
+    private HashSet<string> collectedAnimations = new HashSet<string>();
 
     private static readonly Color RaycastColorNone = new Color(0.5f, 0.5f, 0.5f, 0.15f);
     private static readonly Color RaycastColorTerrain = new Color(0f, 1f, 0f, 0.5f);
@@ -117,8 +126,47 @@ public class DebugOverlayManager : MonoBehaviour
         return texture;
     }
 
+    public void RecordStep()
+    {
+        stepCount++;
+    }
+
+    private void LogAllAnimations()
+    {
+        var animator = HeroController.instance.animCtrl.animator;
+        if (animator?.Library?.clips == null)
+            return;
+
+        Plugin.Logger.LogInfo("=== ALL PLAYER ANIMATIONS ===");
+        int index = 0;
+        foreach (var clip in animator.Library.clips)
+        {
+            if (clip != null && !string.IsNullOrEmpty(clip.name))
+            {
+                int frameCount = clip.frames?.Length ?? 0;
+                Plugin.Logger.LogInfo($"[{index}] {clip.name} ({frameCount} frames)");
+                index++;
+            }
+        }
+        Plugin.Logger.LogInfo($"=== TOTAL: {index} animations ===");
+    }
+
     private void Update()
     {
+        stepTimer += Time.unscaledDeltaTime;
+        if (stepTimer >= 1f)
+        {
+            stepsPerSecond = stepCount / stepTimer;
+            stepCount = 0;
+            stepTimer = 0f;
+        }
+
+        if (!hasLoggedAnimations && HeroController.instance != null && HeroController.instance.animCtrl != null)
+        {
+            LogAllAnimations();
+            hasLoggedAnimations = true;
+        }
+
         if (Input.GetKeyDown(KeyCode.F1))
         {
             showUI = !showUI;
@@ -129,6 +177,18 @@ public class DebugOverlayManager : MonoBehaviour
         {
             showRaycasts = !showRaycasts;
             Plugin.Logger.LogInfo($"Raycast visualization: {(showRaycasts ? "ON" : "OFF")}");
+        }
+
+        // Collect and print new animations
+        var animInfo = GetPlayerAnimationInfo();
+        if (animInfo.HasValue && !string.IsNullOrEmpty(animInfo.Value.clipName))
+        {
+            string clipName = animInfo.Value.clipName;
+            if (!collectedAnimations.Contains(clipName))
+            {
+                collectedAnimations.Add(clipName);
+                Plugin.Logger.LogInfo($"[NEW ANIM #{collectedAnimations.Count}] {clipName} ({animInfo.Value.totalFrames} frames)");
+            }
         }
     }
 
@@ -171,6 +231,24 @@ public class DebugOverlayManager : MonoBehaviour
             normal = { textColor = state.playerInvincible == 1 ? Color.cyan : Color.white }
         };
         GUILayout.Label($"Invincible: {(state.playerInvincible == 1 ? "Yes" : "No")}", invincibleStyle);
+
+        if (HeroController.instance != null)
+        {
+            var cState = HeroController.instance.cState;
+            var activeStates = GetActivePlayerStates(cState);
+            var stateStyle = new GUIStyle(labelStyle) { normal = { textColor = Color.cyan } };
+            GUILayout.Label($"States: {activeStates}", stateStyle);
+
+            // Animation frame info
+            var animInfo = GetPlayerAnimationInfo();
+            if (animInfo.HasValue)
+            {
+                var (clipName, currentFrame, totalFrames, progress) = animInfo.Value;
+                var animStyle = new GUIStyle(labelStyle) { normal = { textColor = new Color(1f, 0.8f, 0.4f) } };
+                GUILayout.Label($"Anim: {clipName}", animStyle);
+                GUILayout.Label($"Frame: {currentFrame} / {totalFrames} ({progress:P0})", animStyle);
+            }
+        }
         GUILayout.Space(10);
 
         GUILayout.Label("BOSS STATE", headerStyle);
@@ -194,6 +272,7 @@ public class DebugOverlayManager : MonoBehaviour
 
         GUILayout.Label("EPISODE INFO", headerStyle);
         GUILayout.Label($"Time: {state.episodeTime:F2}s", labelStyle);
+        GUILayout.Label($"Steps/sec: {stepsPerSecond:F1}", labelStyle);
         GUILayout.Label($"Terminated: {(state.terminated == 1 ? "Yes" : "No")}", labelStyle);
         GUILayout.Label($"Truncated: {(state.truncated == 1 ? "Yes" : "No")}", labelStyle);
         GUILayout.Space(10);
@@ -444,6 +523,26 @@ public class DebugOverlayManager : MonoBehaviour
         return GameStateCollector.CollectGameState();
     }
 
+    private (string clipName, int currentFrame, int totalFrames, float progress)? GetPlayerAnimationInfo()
+    {
+        if (HeroController.instance == null || HeroController.instance.animCtrl == null)
+            return null;
+
+        var animator = HeroController.instance.animCtrl.animator;
+        if (animator == null)
+            return null;
+
+        var clip = animator.CurrentClip;
+        if (clip == null || clip.frames == null || clip.frames.Length == 0)
+            return null;
+
+        int currentFrame = animator.CurrentFrame;
+        int totalFrames = clip.frames.Length;
+        float progress = (float)currentFrame / totalFrames;
+
+        return (clip.name, currentFrame, totalFrames, progress);
+    }
+
     private string GetAttackStateName(BossAttackState state)
     {
         return state switch
@@ -498,6 +597,27 @@ public class DebugOverlayManager : MonoBehaviour
             BossAttackState.Unknown => Color.gray,
             _ => Color.red
         };
+    }
+
+    private string GetActivePlayerStates(HeroControllerStates cState)
+    {
+        var states = new System.Collections.Generic.List<string>();
+
+        if (cState.attacking) states.Add("ATK");
+        if (cState.dashing) states.Add("DASH");
+        if (cState.jumping) states.Add("JUMP");
+        if (cState.falling) states.Add("FALL");
+        if (cState.focusing) states.Add("FOCUS");
+        if (cState.casting) states.Add("CAST");
+        if (cState.recoiling) states.Add("RECOIL");
+        if (cState.wallSliding) states.Add("WALL");
+        if (cState.parrying) states.Add("PARRY");
+        if (cState.evading) states.Add("EVADE");
+        if (cState.bouncing) states.Add("BOUNCE");
+        if (cState.downAttacking) states.Add("DNATK");
+        if (cState.upAttacking) states.Add("UPATK");
+
+        return states.Count > 0 ? string.Join(", ", states) : "IDLE";
     }
 
     private void OnDestroy()

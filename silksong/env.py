@@ -2,43 +2,35 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
-from silksong.shared_memory import SilkSongSharedMemory, GameState, BossAttackState
+from silksong.shared_memory import SilkSongSharedMemory, GameState
 from silksong.constants import (
-    PLAYER_BASE_ATTACK_DAMAGE,
+    PLAYER_MAX_HEALTH,
     BOSS_MAX_HEALTH,
     MAX_EPISODE_STEPS,
     SILK_COST_CLAWLINE,
     SILK_COST_SKILL,
     SILK_COST_HEAL,
+    OBSERVATION_DIM,
 )
 
 
 class SilksongBossEnv(gym.Env):
     metadata = {"render_modes": []}
 
-    def __init__(self, id: int = 1, time_scale: float = 1.0):
+    def __init__(self, id: int = 1, time_scale: float = 1.0, nofx: bool = False):
         super().__init__()
 
         self.action_space = spaces.MultiDiscrete([3, 3, 2, 2, 2, 2, 2, 2])
         self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf, shape=(109,), dtype=np.float32
+            low=-np.inf, high=np.inf, shape=(OBSERVATION_DIM,), dtype=np.float32
         )
 
-        self.shm = SilkSongSharedMemory(id, time_scale)
+        self.shm = SilkSongSharedMemory(id, time_scale, nofx)
 
         self.prev_boss_health = 0
         self.prev_player_health = 0
         self.prev_player_silk = 0
         self.total_steps = 0
-
-        self.attack_cooldown = 0
-        self.attack_cooldown_frames = 1
-        self.skill_cooldown = 0
-        self.skill_cooldown_frames = 1
-        self.heal_cooldown = 0
-        self.heal_cooldown_frames = 1
-        self.clawline_cooldown = 0
-        self.clawline_cooldown_frames = 1
 
         self.attack_count = 0
         self.heal_count = 0
@@ -55,10 +47,6 @@ class SilksongBossEnv(gym.Env):
         self.prev_player_health = game_state.player_health
         self.prev_player_silk = game_state.player_silk
         self.total_steps = 0
-        self.attack_cooldown = 0
-        self.skill_cooldown = 0
-        self.heal_cooldown = 0
-        self.clawline_cooldown = 0
 
         self.attack_count = 0
         self.heal_count = 0
@@ -99,60 +87,30 @@ class SilksongBossEnv(gym.Env):
         boss_dmg = self.prev_boss_health - game_state.boss_health
         player_dmg = self.prev_player_health - game_state.player_health
 
-        hurt = player_dmg > 0
-        hit = boss_dmg > 0
-        boss_stunned = game_state.boss_attack_state == BossAttackState.STUN
-
-        if hit:
-            self.attack_count += 1
-        if hurt:
-            self.hurt_count += 1
-
         reward = 0.0
 
-        if hit:
-            damage_reward = boss_dmg / PLAYER_BASE_ATTACK_DAMAGE
-            if boss_stunned:
-                reward += damage_reward * 2.0
-            else:
-                reward += damage_reward
-
-        if hurt:
-            if boss_stunned:
-                reward -= 2.0
-            else:
-                reward -= 1.0
-
-        health_gained = game_state.player_health - self.prev_player_health
-        if health_gained > 0:
-            reward += health_gained / 3.0
-            self.heal_count += 1
-
-        if not (hurt or hit or health_gained > 0):
+        if boss_dmg == 0 and player_dmg == 0:
             reward -= 0.001
 
-        rel_x = game_state.boss_pos_x - game_state.player_pos_x
-        rel_y = game_state.boss_pos_y - game_state.player_pos_y
-        distance_to_boss = np.sqrt(rel_x ** 2 + rel_y ** 2)
+        if boss_dmg > 0:
+            reward += (boss_dmg / BOSS_MAX_HEALTH)
+            self.attack_count += 1
+        if player_dmg > 0:
+            reward -= (player_dmg / PLAYER_MAX_HEALTH) * 0.2
+            self.hurt_count += 1
 
-        too_far = distance_to_boss > 15.0
-        too_close = distance_to_boss < 1.0
+        distance = np.sqrt(
+            (game_state.player_pos_x - game_state.boss_pos_x) ** 2 +
+            (game_state.player_pos_y - game_state.boss_pos_y) ** 2
+        )
+
+        too_far = distance > 15.0
+        too_close = distance < 1.0
 
         if too_far:
             reward -= 0.001
-        if too_close:
+        elif too_close:
             reward -= 0.001
-
-        win = game_state.boss_health <= 0
-        lose = game_state.player_health <= 0
-
-        if win:
-            health_bonus = game_state.player_health / game_state.player_max_health
-            time_bonus = min(1.0, 100.0 / max(game_state.episode_time, 1.0))
-            reward += health_bonus * 0.5 + time_bonus
-        elif lose:
-            boss_remaining = game_state.boss_health / BOSS_MAX_HEALTH
-            reward -= boss_remaining * 0.5
 
         return reward
 
@@ -198,46 +156,11 @@ class SilksongBossEnv(gym.Env):
             binary[3] = 1
 
         binary[4] = action[2]
-
-        if self.attack_cooldown > 0:
-            binary[5] = 0
-            self.attack_cooldown -= 1
-        else:
-            binary[5] = action[3]
-            if action[3] == 1:
-                self.attack_cooldown = self.attack_cooldown_frames
-
+        binary[5] = action[3]
         binary[6] = action[4]
-
-        if self.clawline_cooldown > 0:
-            binary[7] = 0
-            self.clawline_cooldown -= 1
-        elif self.prev_player_silk < SILK_COST_CLAWLINE:
-            binary[7] = 0
-        else:
-            binary[7] = action[5]
-            if action[5] == 1:
-                self.clawline_cooldown = self.clawline_cooldown_frames
-
-        if self.skill_cooldown > 0:
-            binary[8] = 0
-            self.skill_cooldown -= 1
-        elif self.prev_player_silk < SILK_COST_SKILL:
-            binary[8] = 0
-        else:
-            binary[8] = action[6]
-            if action[6] == 1:
-                self.skill_cooldown = self.skill_cooldown_frames
-
-        if self.heal_cooldown > 0:
-            binary[9] = 0
-            self.heal_cooldown -= 1
-        elif self.prev_player_silk < SILK_COST_HEAL:
-            binary[9] = 0
-        else:
-            binary[9] = action[7]
-            if action[7] == 1:
-                self.heal_cooldown = self.heal_cooldown_frames
+        binary[7] = action[5]
+        binary[8] = action[6]
+        binary[9] = action[7]
 
         return binary
 
