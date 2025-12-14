@@ -1,38 +1,49 @@
 # silksong-agent
 
-A reinforcement learning agent for Hollow Knight: Silksong boss fights. Currently specialized for the Lace boss fight.
+A reinforcement learning agent for Hollow Knight: Silksong boss fights.
+
+> Currently specialized for the **Lace** boss fight.
 
 ## Requirements
 
-- [Hollow Knight: Silksong](https://store.steampowered.com/app/1030300/Hollow_Knight_Silksong/) (paid)
-- [BepInEx 5](https://github.com/BepInEx/BepInEx/releases)
-- [.NET SDK](https://dotnet.microsoft.com/download) (for building the plugin)
-- [uv](https://github.com/astral-sh/uv) (Python package manager)
+| Requirement | Description |
+|-------------|-------------|
+| [Hollow Knight: Silksong](https://store.steampowered.com/app/1030300/Hollow_Knight_Silksong/) | Game (paid) |
+| [BepInEx 5](https://github.com/BepInEx/BepInEx/releases) | Mod framework |
+| [.NET SDK](https://dotnet.microsoft.com/download) | For building the plugin |
+| [uv](https://github.com/astral-sh/uv) | Python package manager |
 
 ## Installation
 
-### Game Setup
+### 1. Game Setup
 
-You can run up to 4 game instances simultaneously during training.
+You can run up to 4 game instances simultaneously during training. Each instance requires a separate copy of the game.
 
-Each instance requires a separate copy of the game.
+1. Disable Steam Cloud synchronization
+2. Install BepInEx in the Steam game installation folder
+3. Create `steam_appid.txt` in the game folder and enter `1030300`
+4. Copy this folder to 4 separate locations
 
-First, disable Steam Cloud synchronization.
+### 2. Save File Setup
 
-Install BepInEx in the Steam game installation folder, then create a `steam_appid.txt` file and enter `1030300`.
+Copy [resources/user1.dat](resources/user1.dat) to:
+```
+%USERPROFILE%\AppData\LocalLow\Team Cherry\Hollow Knight Silksong\default
+```
 
-Copy this folder to 4 separate locations.
+### 3. Environment Configuration
 
-### Save File Setup
+1. Copy `plugin/Directory.Build.props.example` → `plugin/Directory.Build.props`
+2. Copy `.env.example` → `.env`
+3. Set `SILKSONG_PATH_1` to `SILKSONG_PATH_4` to the game executable paths
 
-Copy [resources/user1.dat](resources/user1.dat) to `%USERPROFILE%\AppData\LocalLow\Team Cherry\Hollow Knight Silksong\default`.
+```
+SILKSONG_PATH_1=D:/Games/Silksong 1/Hollow Knight Silksong.exe
+SILKSONG_PATH_2=D:/Games/Silksong 2/Hollow Knight Silksong.exe
+...
+```
 
-### Environment Configuration
-
-Copy `plugin/Directory.Build.props.example` to `plugin/Directory.Build.props` and set `SILKSONG_PATH_1` to `SILKSONG_PATH_4` to the game executable paths (e.g., `D:/Games/Silksong 1/Hollow Knight Silksong.exe`).
-Also copy `.env.example` to `.env` and configure it the same way.
-
-### Build Plugin
+### 4. Build Plugin
 
 ```bash
 dotnet build plugin
@@ -72,30 +83,31 @@ uv run train.py --eval --checkpoint ./models/rl_model_1000_steps.zip
 tensorboard --logdir ./logs
 ```
 
-### Manual Mode
+## Game Plugin
 
-When the game runs with the plugin installed, keyboard input is blocked and the Lace boss fight starts automatically.
-Use the `-manual` argument when you need to modify equipment/items.
-
-```bash
-"D:/Games/Silksong 1/Hollow Knight Silksong.exe" -manual
-```
+### Launch Arguments
 
 | Argument | Description |
 |----------|-------------|
 | `-id <n>` | Instance ID (1-4) |
 | `-timescale <n>` | Game speed multiplier (training: 4, evaluation: 1) |
-| `-manual` | Manual mode |
+| `-manual` | Manual mode (enables keyboard input) |
 | `-nofx` | Disable visual effects |
+
+### Manual Mode
+
+When the game runs with the plugin installed, keyboard input is blocked and the Lace boss fight starts automatically. Use the `-manual` argument when you need to modify equipment/items.
+
+```bash
+"D:/Games/Silksong 1/Hollow Knight Silksong.exe" -manual
+```
 
 ### Debug Overlay
 
-Press `F1` to toggle the state UI overlay, and `F2` to toggle raycast visualization.
-
-### Notes
-
-- Game audio is disabled by the plugin.
-- Initially, the reward was designed as binary (hit/hurt). However, the agent learned to spam the Clawline skill because it deals multiple hits despite low damage per hit. The reward has been changed to damage-proportional, but this has not been fully tested yet.
+| Key | Action |
+|-----|--------|
+| `F1` | Toggle state UI overlay |
+| `F2` | Toggle raycast visualization |
 
 ## Architecture
 
@@ -107,23 +119,36 @@ Press `F1` to toggle the state UI overlay, and `F2` to toggle raycast visualizat
 └─────────────────┘     Command            └─────────────────┘
 ```
 
-- **Shared Memory**: Python and the game plugin communicate through memory-mapped files for low-latency data exchange
-- **Step Mode**: The game pauses after each step (`Time.timeScale = 0`) and waits for the next action from Python
-- **GameState**: Player position/velocity, boss state, raycast data, etc. are sent to Python every step
-- **Command**: Python sends actions (move, jump, attack, etc.) and reset commands to the game
+| Component | Description |
+|-----------|-------------|
+| **Shared Memory** | Python and the game plugin communicate through memory-mapped files |
+| **Step Mode** | Game pauses after each step (`Time.timeScale = 0`) and waits for next action |
+| **GameState** | Player position/velocity, boss state, raycast data sent every step |
+| **Command** | Python sends actions (move, jump, attack, etc.) and reset commands |
 
 ## Extending to Other Bosses
 
-To train on other bosses, you need to modify the following files:
-- Analyze the boss's State through PlayMakerFSM
-- [constants.py](silksong/constants.py), [Constants.cs](plugin/Source/Core/Constants.cs) - Boss health, arena coordinates, etc.
-- [EpisodeResetter.cs](plugin/Source/Core/EpisodeResetter.cs) - Scene transition logic, playerData settings (Lace has an elevator animation, so it waits for `acceptingInput` to be true)
-- [BossStateManager.cs](plugin/Source/Managers/BossStateManager.cs) - Boss State mapping
-- [SharedMemoryManager.cs](plugin/Source/Managers/SharedMemoryManager.cs), [shared_memory.py](silksong/shared_memory.py) - When changing State structure
+To train on other bosses, modify the following files:
+
+| File | Purpose |
+|------|---------|
+| `silksong/constants.py` | Boss health, arena coordinates |
+| `plugin/Source/Core/Constants.cs` | Same as above (C# side) |
+| `plugin/Source/Core/EpisodeResetter.cs` | Scene transition logic, playerData settings |
+| `plugin/Source/Managers/BossStateManager.cs` | Boss state mapping |
+| `silksong/shared_memory.py` | GameState structure (Python) |
+| `plugin/Source/Managers/SharedMemoryManager.cs` | GameState structure (C#) |
+
+> **Tip**: Analyze the boss's state through PlayMakerFSM.
+
+## Notes
+
+- Game audio is disabled by the plugin.
+- Initially, the reward was designed as binary (hit/hurt). However, the agent learned to spam the Clawline skill because it deals multiple hits despite low damage per hit. The reward has been changed to damage-proportional.
 
 ## Acknowledgments
 
-This project was inspired by the [HKRL](https://github.com/AdityaJain1030/HKRL) repository.
+This project was inspired by [HKRL](https://github.com/AdityaJain1030/HKRL).
 
 ## License
 
