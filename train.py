@@ -92,7 +92,7 @@ def train(
 
     policy_kwargs = dict(
         features_extractor_class=MultiHeadFeatureExtractor,
-        features_extractor_kwargs=dict(features_dim=256),
+        features_extractor_kwargs=dict(features_dim=128),
         net_arch=dict(pi=[128], vf=[128]),
         activation_fn=nn.ReLU,
     )
@@ -252,7 +252,7 @@ if __name__ == "__main__":
             gamma=0.99,
             gae_lambda=0.95,
             clip_range=0.1,
-            ent_coef=0.03,
+            ent_coef=0.02,
             vf_coef=0.5,
             max_grad_norm=0.3,
             checkpoint_path=args.checkpoint,

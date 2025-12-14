@@ -1,6 +1,7 @@
 using System;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.InteropServices;
+using System.Threading;
 using UnityEngine;
 
 namespace SilksongAgent;
@@ -20,37 +21,111 @@ public enum CommandType
     Reset = 2
 }
 
-public enum BossAttackState
+public enum BossAnimationState
 {
     Idle = 0,
-    Hop = 1,
-    Pose = 2,
-    ComboSlashAntic = 3,
-    ComboSlashAttack = 4,
-    CounterAntic = 5,
-    CounterStance = 6,
-    CounterAttack = 7,
-    RapidSlashAntic = 8,
-    RapidSlashAttack = 9,
-    JSlashAntic = 10,
-    JSlashAttack = 11,
-    DownstabAntic = 12,
-    DownstabAttack = 13,
-    ChargeAntic = 14,
-    ChargeAttack = 15,
-    CrossSlashAntic = 16,
-    CrossSlashAttack = 17,
-    Evade = 18,
-    Stun = 19,
-    Teleport = 20,
-    PhaseTransition = 21,
-    QuickSlashAttack = 22,
-    SlashEnd = 23,
-    Fall = 24,
-    MultihitSlash = 25,
-    Multihitting = 26,
-    SteamDamage = 27,
-    Unknown = 28
+    ComboSlash = 1,
+    Antic = 2,
+    RisingSlash = 3,
+    ChargeAntic = 4,
+    RapidSlashCharge = 5,
+    TurnToIdle = 6,
+    CounterStance = 7,
+    Engarde = 8,
+    Evade = 9,
+    ForwardHop = 10,
+    NPCIdleRight = 11,
+    NPCIdleTurnLeft = 12,
+    NPCIdleLeft = 13,
+    NPCIdleTurnRight = 14,
+    Possession = 15,
+    Stun = 16,
+    Charge = 17,
+    ChargeRecover = 18,
+    DownstabAntic = 19,
+    Downstab = 20,
+    DownstabEnd = 21,
+    CounterAntic = 22,
+    CounterEnd = 23,
+    CounterHit = 24,
+    RapidSlashEnd = 25,
+    RapidSlashLoop = 26,
+    RapidSlashEffect = 27,
+    JumpAntic = 28,
+    Conduct = 29,
+    CrossSlashAntic = 30,
+    ConductEnd = 31,
+    StunAir = 32,
+    StunRecover = 33,
+    JumpAnticQ = 34,
+    JumpAway = 35,
+    EyeFlash = 36,
+    MultiHitSlash = 37,
+    PoseLean = 38,
+    PoseUpright = 39,
+    PoseSwish = 40,
+    DashBurst = 41,
+    AirDashBurst = 42,
+    StunHit = 43,
+    TrapStun = 44,
+    PoseHornetDefeated = 45,
+    NPCSit = 46,
+    SwishBlock = 47,
+    ConductToIdle = 48,
+    NPCSitAntic = 49,
+    NPCSitLook = 50,
+    SitToIdle = 51,
+    ComboSlashQ = 52,
+    DownstabAnticQ = 53,
+    BombSlashAntic = 54,
+    BombSlash = 55,
+    Fall = 56,
+    Land = 57,
+    Death1 = 58,
+    Death2 = 59,
+    Lie = 60,
+    LieToWake = 61,
+    ComboSlashTriple = 62,
+    P2ShiftOld = 63,
+    ChargeMultiAntic = 64,
+    ChargeMulti = 65,
+    ChargeMultiRecover = 66,
+    RisingSlashMulti = 67,
+    Roar = 68,
+    DeathStagger = 69,
+    Laugh = 70,
+    TeleIn = 71,
+    DeathAir = 72,
+    DeathLandStun = 73,
+    TeleOut = 74,
+    WallBounce = 75,
+    ChargeCrossup = 76,
+    QuickSlash = 77,
+    RapidSlashAirTeleIn = 78,
+    RapidSlashAir = 79,
+    Sing = 80,
+    SingEnd = 81,
+    RapidSlashAirEnd = 82,
+    TeleOutFast = 83,
+    CounterAnticFast = 84,
+    MultiHitSlashAir = 85,
+    MultihitAirEnd = 86,
+    P2Shift = 87,
+    MidBattleRoar = 88,
+    CounterFlash = 89,
+    RapidSlashAirEndQ = 90,
+    SwishBlockLong = 91,
+    ComboStrike1 = 92,
+    ComboStrike2 = 93,
+    ChargeStrike = 94,
+    DownstabStrike = 95,
+    DownstabFollowup = 96,
+    ForwardHopIntro = 97,
+    ComboSlashLongAntic = 98,
+    ForwardHopSlow = 99,
+    LavaDamage = 100,
+    TeleInFast = 101,
+    Unknown = 102
 }
 
 public enum PlayerAnimationState
@@ -161,48 +236,42 @@ public struct CommandData
 [StructLayout(LayoutKind.Sequential, Pack = 4)]
 public unsafe struct GameState
 {
+    // === Player ===
     public float playerPosX;
     public float playerPosY;
     public float playerVelX;
     public float playerVelY;
-    public float bossPosX;
-    public float bossPosY;
-    public float bossVelX;
-    public float bossVelY;
-    public float episodeTime;
-
     public int playerHealth;
     public int playerMaxHealth;
     public int playerSilk;
-    public int bossHealth;
-    public int bossMaxHealth;
-    public int bossPhase;
-    public int bossAttackState;
-
+    public int playerAnimationState;
+    public float playerAnimationProgress;
     public byte playerGrounded;
     public byte playerCanDash;
     public byte playerFacingRight;
     public byte playerInvincible;
-    public byte bossFacingRight;
-    public byte terminated;
-    public byte truncated;
     public byte playerCanAttack;
 
-    public byte playerAttacking;
-    public byte playerDashing;
-    public byte playerJumping;
-    public byte playerFalling;
-    public byte playerFocusing;
-    public byte playerCasting;
-    public byte playerRecoiling;
-    public byte playerWallSliding;
+    // === Boss ===
+    public float bossPosX;
+    public float bossPosY;
+    public float bossVelX;
+    public float bossVelY;
+    public int bossHealth;
+    public int bossMaxHealth;
+    public int bossPhase;
+    public int bossAnimationState;
+    public float bossAnimationProgress;
+    public byte bossFacingRight;
 
+    // === Episode ===
+    public float episodeTime;
+    public byte terminated;
+    public byte truncated;
+
+    // === Raycast ===
     public fixed float raycastDistances[32];
     public fixed int raycastHitTypes[32];
-
-    public int playerAnimationState;
-    public float playerAnimationProgress;
-    public float playerAnimationTotalFrames;
 }
 
 public class SharedMemoryManager : MonoBehaviour
@@ -210,6 +279,7 @@ public class SharedMemoryManager : MonoBehaviour
     public static SharedMemoryManager Instance;
 
     private const string MemoryNameBase = "silksong_shared_memory";
+    private const string EventNameBase = "silksong_state_event";
     private const int MemorySize = 4096;
     private const int StateOffset = 0;
     private const int GameStateOffset = 4;
@@ -218,12 +288,20 @@ public class SharedMemoryManager : MonoBehaviour
     private MemoryMappedFile memoryMappedFile;
     private MemoryMappedViewAccessor accessor;
     private CommandData commandData;
+    private EventWaitHandle stateEvent;
 
     private string GetMemoryName()
     {
         if (Plugin.InstanceId == 0)
             return MemoryNameBase;
         return $"{MemoryNameBase}_{Plugin.InstanceId}";
+    }
+
+    private string GetEventName()
+    {
+        if (Plugin.InstanceId == 0)
+            return EventNameBase;
+        return $"{EventNameBase}_{Plugin.InstanceId}";
     }
 
     private void Awake()
@@ -240,6 +318,10 @@ public class SharedMemoryManager : MonoBehaviour
         var memoryName = GetMemoryName();
         memoryMappedFile = MemoryMappedFile.CreateOrOpen(memoryName, MemorySize);
         accessor = memoryMappedFile.CreateViewAccessor();
+
+        var eventName = GetEventName();
+        stateEvent = new EventWaitHandle(false, EventResetMode.ManualReset, eventName);
+        Plugin.Logger.LogInfo($"Opened state event: {eventName}");
     }
 
     public void WriteState(StateType state)
@@ -247,6 +329,7 @@ public class SharedMemoryManager : MonoBehaviour
         try
         {
             accessor.Write(StateOffset, (int)state);
+            stateEvent.Set();
         }
         catch (Exception e)
         {
@@ -337,5 +420,12 @@ public class SharedMemoryManager : MonoBehaviour
 
         ReadCommand();
         ProcessCommand();
+    }
+
+    private void OnDestroy()
+    {
+        stateEvent?.Dispose();
+        accessor?.Dispose();
+        memoryMappedFile?.Dispose();
     }
 }

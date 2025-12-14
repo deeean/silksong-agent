@@ -86,6 +86,7 @@ Use the `-manual` argument when you need to modify equipment/items.
 | `-id <n>` | Instance ID (1-4) |
 | `-timescale <n>` | Game speed multiplier (training: 4, evaluation: 1) |
 | `-manual` | Manual mode |
+| `-nofx` | Disable visual effects |
 
 ### Debug Overlay
 
@@ -119,11 +120,6 @@ To train on other bosses, you need to modify the following files:
 - [EpisodeResetter.cs](plugin/Source/Core/EpisodeResetter.cs) - Scene transition logic, playerData settings (Lace has an elevator animation, so it waits for `acceptingInput` to be true)
 - [BossStateManager.cs](plugin/Source/Managers/BossStateManager.cs) - Boss State mapping
 - [SharedMemoryManager.cs](plugin/Source/Managers/SharedMemoryManager.cs), [shared_memory.py](silksong/shared_memory.py) - When changing State structure
-
-## TODO
-
-- [ ] Optimize FindObjectsByType usage in BossProjectileManager if a faster method exists
-- [ ] Test if Raycast hit type needs one-hot encoding
 
 ## Acknowledgments
 

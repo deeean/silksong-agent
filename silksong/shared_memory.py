@@ -1,4 +1,5 @@
 import atexit
+import ctypes
 import os
 import signal
 import struct
@@ -9,13 +10,27 @@ from dataclasses import dataclass
 
 import numpy as np
 
+kernel32 = ctypes.windll.kernel32
+
+WAIT_OBJECT_0 = 0x00000000
+WAIT_TIMEOUT = 0x00000102
+WAIT_FAILED = 0xFFFFFFFF
+INFINITE = 0xFFFFFFFF
+
+EVENT_ALL_ACCESS = 0x1F0003
+
+
+class GameTimeoutError(Exception):
+    pass
+
 from silksong.constants import (
     PLAYER_MAX_HEALTH,
     PLAYER_MAX_SILK,
     BOSS_MAX_HEALTH,
-    NUM_BOSS_ATTACK_STATES,
+    NUM_BOSS_ANIMATION_STATES,
     NUM_PLAYER_ANIMATION_STATES,
     NUM_HIT_TYPES,
+    NUM_RAYS,
     ARENA_MIN_X,
     ARENA_MAX_X,
     ARENA_MIN_Y,
@@ -62,38 +77,6 @@ class StateType(IntEnum):
     RESET = 3
 
 
-class BossAttackState(IntEnum):
-    IDLE = 0
-    HOP = 1
-    POSE = 2
-    COMBO_SLASH_ANTIC = 3
-    COMBO_SLASH_ATTACK = 4
-    COUNTER_ANTIC = 5
-    COUNTER_STANCE = 6
-    COUNTER_ATTACK = 7
-    RAPID_SLASH_ANTIC = 8
-    RAPID_SLASH_ATTACK = 9
-    J_SLASH_ANTIC = 10
-    J_SLASH_ATTACK = 11
-    DOWNSTAB_ANTIC = 12
-    DOWNSTAB_ATTACK = 13
-    CHARGE_ANTIC = 14
-    CHARGE_ATTACK = 15
-    CROSS_SLASH_ANTIC = 16
-    CROSS_SLASH_ATTACK = 17
-    EVADE = 18
-    STUN = 19
-    TELEPORT = 20
-    PHASE_TRANSITION = 21
-    QUICK_SLASH_ATTACK = 22
-    SLASH_END = 23
-    FALL = 24
-    MULTIHIT_SLASH = 25
-    MULTIHITTING = 26
-    STEAM_DAMAGE = 27
-    UNKNOWN = 28
-
-
 @dataclass
 class GameState:
     player_pos_x: float
@@ -103,10 +86,13 @@ class GameState:
     player_health: int
     player_max_health: int
     player_silk: int
+    player_animation_state: int
+    player_animation_progress: float
     player_grounded: bool
     player_can_dash: bool
     player_facing_right: bool
     player_invincible: bool
+    player_can_attack: bool
 
     boss_pos_x: float
     boss_pos_y: float
@@ -115,29 +101,16 @@ class GameState:
     boss_health: int
     boss_max_health: int
     boss_phase: int
-    boss_attack_state: int
+    boss_animation_state: int
+    boss_animation_progress: float
     boss_facing_right: bool
 
     episode_time: float
     terminated: bool
     truncated: bool
-    player_can_attack: bool
-
-    player_attacking: bool
-    player_dashing: bool
-    player_jumping: bool
-    player_falling: bool
-    player_focusing: bool
-    player_casting: bool
-    player_recoiling: bool
-    player_wall_sliding: bool
 
     raycast_distances: np.ndarray
     raycast_hit_types: np.ndarray
-
-    player_animation_state: int
-    player_animation_progress: float
-    player_animation_total_frames: float
 
     MAX_DISTANCE = np.sqrt((ARENA_MAX_X - ARENA_MIN_X) ** 2 + (ARENA_MAX_Y - ARENA_MIN_Y) ** 2)
 
@@ -152,9 +125,9 @@ class GameState:
         norm_boss_vel_x = (self.boss_vel_x - BOSS_VEL_X_RANGE[0]) / (BOSS_VEL_X_RANGE[1] - BOSS_VEL_X_RANGE[0])
         norm_boss_vel_y = (self.boss_vel_y - BOSS_VEL_Y_RANGE[0]) / (BOSS_VEL_Y_RANGE[1] - BOSS_VEL_Y_RANGE[0])
 
-        boss_attack_one_hot = np.zeros(NUM_BOSS_ATTACK_STATES, dtype=np.float32)
-        if 0 <= self.boss_attack_state < NUM_BOSS_ATTACK_STATES:
-            boss_attack_one_hot[self.boss_attack_state] = 1.0
+        boss_anim_one_hot = np.zeros(NUM_BOSS_ANIMATION_STATES, dtype=np.float32)
+        if 0 <= self.boss_animation_state < NUM_BOSS_ANIMATION_STATES:
+            boss_anim_one_hot[self.boss_animation_state] = 1.0
 
         rel_x = (self.boss_pos_x - self.player_pos_x) / (ARENA_MAX_X - ARENA_MIN_X)
         rel_y = (self.boss_pos_y - self.player_pos_y) / (ARENA_MAX_Y - ARENA_MIN_Y)
@@ -184,7 +157,8 @@ class GameState:
             np.clip(distance, 0.0, 1.0),
         ]
 
-        state_obs.extend(boss_attack_one_hot)
+        state_obs.extend(boss_anim_one_hot)
+        state_obs.append(np.clip(self.boss_animation_progress, 0.0, 1.0))
 
         player_anim_one_hot = np.zeros(NUM_PLAYER_ANIMATION_STATES, dtype=np.float32)
         if 0 <= self.player_animation_state < NUM_PLAYER_ANIMATION_STATES:
@@ -193,11 +167,15 @@ class GameState:
         state_obs.extend(player_anim_one_hot)
         state_obs.append(np.clip(self.player_animation_progress, 0.0, 1.0))
 
-        hit_types_normalized = self.raycast_hit_types / (NUM_HIT_TYPES - 1)
+        hit_types_one_hot = np.zeros((NUM_RAYS, NUM_HIT_TYPES), dtype=np.float32)
+        for i, hit_type in enumerate(self.raycast_hit_types):
+            idx = int(hit_type)
+            if 0 <= idx < NUM_HIT_TYPES:
+                hit_types_one_hot[i, idx] = 1.0
 
         raycast_obs = np.concatenate([
             self.raycast_distances,
-            hit_types_normalized
+            hit_types_one_hot.flatten()
         ])
 
         observe = np.concatenate([
@@ -210,32 +188,42 @@ class GameState:
 
 class SilkSongSharedMemory:
     MEMORY_NAME = "silksong_shared_memory"
+    EVENT_NAME = "silksong_state_event"
     MEMORY_SIZE = 4096
 
     STATE_OFFSET = 0
     GAME_STATE_OFFSET = 4
     COMMAND_OFFSET = 1024
 
-    GAME_STATE_FORMAT = 'f' * 9 + 'i' * 7 + 'B' * 16 + 'f' * 32 + 'i' * 32 + 'i' + 'ff'
+    GAME_STATE_FORMAT = (
+        'ffff' + 'iiii' + 'f' + 'BBBBB' + 'xxx' +
+        'ffff' + 'iiii' + 'f' + 'B' + 'xxx' +
+        'f' + 'BB' + 'xx' +
+        'f' * 32 + 'i' * 32
+    )
     GAME_STATE_SIZE = struct.calcsize(GAME_STATE_FORMAT)
 
     MAX_ENVS = 4
+    DEFAULT_TIMEOUT_MS = 30000
 
     @staticmethod
     def get_game_path(env_id: int) -> str:
         return os.getenv(f"SILKSONG_PATH_{env_id}")
 
-    def __init__(self, id: int, time_scale: float = 1.0, nofx: bool = False):
+    def __init__(self, id: int, time_scale: float = 1.0, nofx: bool = False, timeout_ms: int = None):
         self.id = id
         self.time_scale = time_scale
         self.nofx = nofx
         self.process = None
+        self.event_handle = None
+        self.timeout_ms = timeout_ms if timeout_ms is not None else self.DEFAULT_TIMEOUT_MS
 
         if id < 1 or id > self.MAX_ENVS:
             raise ValueError(f"Invalid environment ID: {id}. Must be 1-{self.MAX_ENVS}.")
 
         game_path = self.get_game_path(id)
         shm_name = self.MEMORY_NAME + f"_{id}"
+        event_name = self.EVENT_NAME + f"_{id}"
 
         try:
             self.shm = shared_memory.SharedMemory(
@@ -254,6 +242,11 @@ class SilkSongSharedMemory:
             self._owns_shm = False
             print(f"[Env {id}] Connected to existing shared memory: {shm_name}")
 
+        self.event_handle = kernel32.CreateEventW(None, True, False, event_name)
+        if self.event_handle == 0:
+            raise RuntimeError(f"Failed to create event: {event_name}")
+        print(f"[Env {id}] Created event: {event_name}")
+
         args = [game_path, "-id", str(id), "-timescale", str(time_scale)]
         if nofx:
             args.append("-nofx")
@@ -263,7 +256,7 @@ class SilkSongSharedMemory:
         self.process = subprocess.Popen(args)
 
         print(f"[Env {id}] Waiting for game to connect...")
-        self.wait_for_state(StateType.READY)
+        self.wait_for_state(StateType.READY, timeout_ms=60000)
         print(f"[Env {id}] Game connected!")
 
         _active_instances.append(self)
@@ -274,47 +267,39 @@ class SilkSongSharedMemory:
     def read_game_state(self) -> GameState:
         data = struct.unpack_from(self.GAME_STATE_FORMAT, self.shm.buf, offset=self.GAME_STATE_OFFSET)
 
-        raycast_distances = np.array(data[32:64], dtype=np.float32)
-        raycast_hit_types = np.array(data[64:96], dtype=np.float32)
+        raycast_distances = np.array(data[27:59], dtype=np.float32)
+        raycast_hit_types = np.array(data[59:91], dtype=np.float32)
 
         return GameState(
             player_pos_x=data[0],
             player_pos_y=data[1],
             player_vel_x=data[2],
             player_vel_y=data[3],
-            boss_pos_x=data[4],
-            boss_pos_y=data[5],
-            boss_vel_x=data[6],
-            boss_vel_y=data[7],
-            episode_time=data[8],
-            player_health=data[9],
-            player_max_health=data[10],
-            player_silk=data[11],
-            boss_health=data[12],
-            boss_max_health=data[13],
-            boss_phase=data[14],
-            boss_attack_state=data[15],
-            player_grounded=bool(data[16]),
-            player_can_dash=bool(data[17]),
-            player_facing_right=bool(data[18]),
-            player_invincible=bool(data[19]),
-            boss_facing_right=bool(data[20]),
-            terminated=bool(data[21]),
-            truncated=bool(data[22]),
-            player_can_attack=bool(data[23]),
-            player_attacking=bool(data[24]),
-            player_dashing=bool(data[25]),
-            player_jumping=bool(data[26]),
-            player_falling=bool(data[27]),
-            player_focusing=bool(data[28]),
-            player_casting=bool(data[29]),
-            player_recoiling=bool(data[30]),
-            player_wall_sliding=bool(data[31]),
+            player_health=data[4],
+            player_max_health=data[5],
+            player_silk=data[6],
+            player_animation_state=data[7],
+            player_animation_progress=data[8],
+            player_grounded=bool(data[9]),
+            player_can_dash=bool(data[10]),
+            player_facing_right=bool(data[11]),
+            player_invincible=bool(data[12]),
+            player_can_attack=bool(data[13]),
+            boss_pos_x=data[14],
+            boss_pos_y=data[15],
+            boss_vel_x=data[16],
+            boss_vel_y=data[17],
+            boss_health=data[18],
+            boss_max_health=data[19],
+            boss_phase=data[20],
+            boss_animation_state=data[21],
+            boss_animation_progress=data[22],
+            boss_facing_right=bool(data[23]),
+            episode_time=data[24],
+            terminated=bool(data[25]),
+            truncated=bool(data[26]),
             raycast_distances=raycast_distances,
             raycast_hit_types=raycast_hit_types,
-            player_animation_state=data[96],
-            player_animation_progress=data[97],
-            player_animation_total_frames=data[98],
         )
 
     def send_command(self, command_type: CommandType,
@@ -338,13 +323,32 @@ class SilkSongSharedMemory:
         struct.pack_into('B', self.shm.buf, offset + 13, 1 if heal else 0)
         struct.pack_into('i', self.shm.buf, offset + 14, 1)
 
-    def wait_for_state(self, state_type: StateType):
-        """Polling-based wait for state change."""
+    def wait_for_state(self, state_type: StateType, timeout_ms: int = None):
+        if timeout_ms is None:
+            timeout_ms = self.timeout_ms
+
+        elapsed_ms = 0
+        poll_interval_ms = 100
+
         while True:
             current_state = self.read_state()
             if current_state == state_type:
                 struct.pack_into('i', self.shm.buf, self.STATE_OFFSET, int(StateType.READY))
+                kernel32.ResetEvent(self.event_handle)
                 break
+
+            result = kernel32.WaitForSingleObject(self.event_handle, poll_interval_ms)
+
+            if result == WAIT_TIMEOUT:
+                elapsed_ms += poll_interval_ms
+                if elapsed_ms >= timeout_ms:
+                    raise GameTimeoutError(
+                        f"[Env {self.id}] Game did not respond within {timeout_ms}ms. "
+                        f"Expected state: {state_type.name}, current state: {StateType(current_state).name}"
+                    )
+            elif result == WAIT_FAILED:
+                error = ctypes.get_last_error()
+                raise RuntimeError(f"[Env {self.id}] WaitForSingleObject failed with error: {error}")
 
     def reset(self) -> GameState:
         self.send_command(CommandType.RESET)
@@ -371,6 +375,36 @@ class SilkSongSharedMemory:
         self.wait_for_state(StateType.STEP)
         return self.read_game_state()
 
+    def restart(self):
+        print(f"[Env {self.id}] Restarting game...")
+
+        if self.process is not None:
+            try:
+                self.process.terminate()
+                self.process.wait(timeout=5)
+            except Exception:
+                try:
+                    self.process.kill()
+                except Exception:
+                    pass
+            self.process = None
+
+        self.shm.buf[:] = bytes(self.MEMORY_SIZE)
+
+        kernel32.ResetEvent(self.event_handle)
+
+        game_path = self.get_game_path(self.id)
+        args = [game_path, "-id", str(self.id), "-timescale", str(self.time_scale)]
+        if self.nofx:
+            args.append("-nofx")
+
+        print(f"[Env {self.id}] Launching game from: {game_path}")
+        self.process = subprocess.Popen(args)
+
+        print(f"[Env {self.id}] Waiting for game to connect...")
+        self.wait_for_state(StateType.READY, timeout_ms=60000)
+        print(f"[Env {self.id}] Game reconnected!")
+
     def close(self):
         if self in _active_instances:
             _active_instances.remove(self)
@@ -385,6 +419,13 @@ class SilkSongSharedMemory:
                 except Exception:
                     pass
             self.process = None
+
+        if self.event_handle is not None:
+            try:
+                kernel32.CloseHandle(self.event_handle)
+            except Exception:
+                pass
+            self.event_handle = None
 
         if hasattr(self, 'shm') and self.shm is not None:
             try:

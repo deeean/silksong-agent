@@ -2,7 +2,7 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
-from silksong.shared_memory import SilkSongSharedMemory, GameState
+from silksong.shared_memory import SilkSongSharedMemory, GameState, GameTimeoutError
 from silksong.constants import (
     PLAYER_MAX_HEALTH,
     BOSS_MAX_HEALTH,
@@ -38,10 +38,17 @@ class SilksongBossEnv(gym.Env):
         self.episode_reward = 0.0
         self.lowest_boss_hp = float('inf')
 
+        self.prev_attack = 0
+
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
 
-        game_state = self.shm.reset()
+        try:
+            game_state = self.shm.reset()
+        except GameTimeoutError as e:
+            print(f"[Env] Reset timeout: {e}")
+            self.shm.restart()
+            game_state = self.shm.reset()
 
         self.prev_boss_health = game_state.boss_health
         self.prev_player_health = game_state.player_health
@@ -53,6 +60,7 @@ class SilksongBossEnv(gym.Env):
         self.hurt_count = 0
         self.episode_reward = 0.0
         self.lowest_boss_hp = game_state.boss_health
+        self.prev_attack = 0
 
         observation = game_state.to_observation()
         info = self._get_info(game_state)
@@ -63,7 +71,12 @@ class SilksongBossEnv(gym.Env):
         self.total_steps += 1
 
         binary_action = self._convert_to_binary(action)
-        game_state = self.shm.step(binary_action)
+
+        try:
+            game_state = self.shm.step(binary_action)
+        except GameTimeoutError as e:
+            print(f"[Env] {e}")
+            return self._handle_timeout()
 
         reward = self._calculate_reward(game_state)
 
@@ -83,20 +96,32 @@ class SilksongBossEnv(gym.Env):
 
         return observation, reward, terminated, truncated, info
 
+    def _handle_timeout(self):
+        self.shm.restart()
+
+        game_state = self.shm.reset()
+
+        self.prev_boss_health = game_state.boss_health
+        self.prev_player_health = game_state.player_health
+        self.prev_player_silk = game_state.player_silk
+
+        observation = game_state.to_observation()
+        info = self._get_info(game_state, episode_end=True)
+        info["timeout_restart"] = True
+
+        return observation, 0.0, False, True, info
+
     def _calculate_reward(self, game_state: GameState) -> float:
         boss_dmg = self.prev_boss_health - game_state.boss_health
         player_dmg = self.prev_player_health - game_state.player_health
 
         reward = 0.0
 
-        if boss_dmg == 0 and player_dmg == 0:
-            reward -= 0.001
-
         if boss_dmg > 0:
             reward += (boss_dmg / BOSS_MAX_HEALTH)
             self.attack_count += 1
         if player_dmg > 0:
-            reward -= (player_dmg / PLAYER_MAX_HEALTH) * 0.2
+            reward -= (player_dmg / PLAYER_MAX_HEALTH) * 0.3
             self.hurt_count += 1
 
         distance = np.sqrt(
@@ -111,6 +136,13 @@ class SilksongBossEnv(gym.Env):
             reward -= 0.001
         elif too_close:
             reward -= 0.001
+
+        if game_state.player_health <= 0:
+            reward -= game_state.boss_health / BOSS_MAX_HEALTH
+        if game_state.boss_health <= 0:
+            reward += game_state.player_health / PLAYER_MAX_HEALTH
+
+        reward -= 0.0005
 
         return reward
 
@@ -156,7 +188,13 @@ class SilksongBossEnv(gym.Env):
             binary[3] = 1
 
         binary[4] = action[2]
-        binary[5] = action[3]
+
+        if self.prev_attack == 1:
+            binary[5] = 0
+        else:
+            binary[5] = action[3]
+        self.prev_attack = binary[5]
+
         binary[6] = action[4]
         binary[7] = action[5]
         binary[8] = action[6]

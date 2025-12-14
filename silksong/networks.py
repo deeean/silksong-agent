@@ -10,7 +10,7 @@ from silksong.constants import STATE_DIM, RAYCAST_DIM
 
 
 class MultiHeadFeatureExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space, features_dim: int = 256):
+    def __init__(self, observation_space, features_dim: int = 128):
         super().__init__(observation_space, features_dim)
 
         self.state_branch = nn.Sequential(

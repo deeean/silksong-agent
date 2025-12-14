@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
@@ -17,6 +16,8 @@ public class DebugOverlayManager : MonoBehaviour
     private GUIStyle keyStyle;
     private GUIStyle keyPressedStyle;
     private GUIStyle keyLabelStyle;
+    private GUIStyle flagStyle;
+    private GUIStyle animStyle;
 
     private Texture2D keyNormalTex;
     private Texture2D keyPressedTex;
@@ -24,15 +25,15 @@ public class DebugOverlayManager : MonoBehaviour
     private int stepCount = 0;
     private float stepTimer = 0f;
     private float stepsPerSecond = 0f;
-    private bool hasLoggedAnimations = false;
-
-    private HashSet<string> collectedAnimations = new HashSet<string>();
 
     private static readonly Color RaycastColorNone = new Color(0.5f, 0.5f, 0.5f, 0.15f);
     private static readonly Color RaycastColorTerrain = new Color(0f, 1f, 0f, 0.5f);
     private static readonly Color RaycastColorEnemy = new Color(1f, 0.5f, 0f, 0.7f);
     private static readonly Color RaycastColorProjectile = new Color(1f, 0f, 0f, 0.85f);
+    private static readonly Color RaycastColorBossProjectile = new Color(1f, 0.2f, 0.2f, 0.9f);
     private static readonly Color RaycastColorHazard = new Color(1f, 0f, 1f, 1f);
+
+    private Material lineMaterial;
 
     private void Awake()
     {
@@ -69,6 +70,20 @@ public class DebugOverlayManager : MonoBehaviour
         {
             normal = { background = MakeBackgroundTexture(new Color(0, 0, 0, 0.7f)) },
             padding = new RectOffset(10, 10, 10, 10)
+        };
+
+        flagStyle = new GUIStyle
+        {
+            fontSize = 14,
+            normal = { textColor = Color.cyan },
+            padding = new RectOffset(5, 5, 2, 2)
+        };
+
+        animStyle = new GUIStyle
+        {
+            fontSize = 14,
+            normal = { textColor = new Color(1f, 0.8f, 0.4f) },
+            padding = new RectOffset(5, 5, 2, 2)
         };
 
         keyNormalTex = MakeKeyTexture(new Color(0.45f, 0.45f, 0.45f, 1f), new Color(0.25f, 0.25f, 0.25f, 1f));
@@ -131,26 +146,6 @@ public class DebugOverlayManager : MonoBehaviour
         stepCount++;
     }
 
-    private void LogAllAnimations()
-    {
-        var animator = HeroController.instance.animCtrl.animator;
-        if (animator?.Library?.clips == null)
-            return;
-
-        Plugin.Logger.LogInfo("=== ALL PLAYER ANIMATIONS ===");
-        int index = 0;
-        foreach (var clip in animator.Library.clips)
-        {
-            if (clip != null && !string.IsNullOrEmpty(clip.name))
-            {
-                int frameCount = clip.frames?.Length ?? 0;
-                Plugin.Logger.LogInfo($"[{index}] {clip.name} ({frameCount} frames)");
-                index++;
-            }
-        }
-        Plugin.Logger.LogInfo($"=== TOTAL: {index} animations ===");
-    }
-
     private void Update()
     {
         stepTimer += Time.unscaledDeltaTime;
@@ -159,12 +154,6 @@ public class DebugOverlayManager : MonoBehaviour
             stepsPerSecond = stepCount / stepTimer;
             stepCount = 0;
             stepTimer = 0f;
-        }
-
-        if (!hasLoggedAnimations && HeroController.instance != null && HeroController.instance.animCtrl != null)
-        {
-            LogAllAnimations();
-            hasLoggedAnimations = true;
         }
 
         if (Input.GetKeyDown(KeyCode.F1))
@@ -177,18 +166,6 @@ public class DebugOverlayManager : MonoBehaviour
         {
             showRaycasts = !showRaycasts;
             Plugin.Logger.LogInfo($"Raycast visualization: {(showRaycasts ? "ON" : "OFF")}");
-        }
-
-        // Collect and print new animations
-        var animInfo = GetPlayerAnimationInfo();
-        if (animInfo.HasValue && !string.IsNullOrEmpty(animInfo.Value.clipName))
-        {
-            string clipName = animInfo.Value.clipName;
-            if (!collectedAnimations.Contains(clipName))
-            {
-                collectedAnimations.Add(clipName);
-                Plugin.Logger.LogInfo($"[NEW ANIM #{collectedAnimations.Count}] {clipName} ({animInfo.Value.totalFrames} frames)");
-            }
         }
     }
 
@@ -214,76 +191,100 @@ public class DebugOverlayManager : MonoBehaviour
 
         GUILayout.BeginArea(new Rect(x, y, width, Screen.height - 20), boxStyle);
 
-        GUILayout.Label("=== SILKSONG AGENT STATE ===", headerStyle);
+        GUILayout.Label("=== GAMESTATE ===", headerStyle);
         GUILayout.Space(5);
 
-        GUILayout.Label("PLAYER STATE", headerStyle);
+        // Player State
+        GUILayout.Label("PLAYER", headerStyle);
         GUILayout.Label($"Position: ({state.playerPosX:F2}, {state.playerPosY:F2})", labelStyle);
         GUILayout.Label($"Velocity: ({state.playerVelX:F2}, {state.playerVelY:F2})", labelStyle);
         GUILayout.Label($"Health: {state.playerHealth} / {state.playerMaxHealth}", labelStyle);
         GUILayout.Label($"Silk: {state.playerSilk}", labelStyle);
-        GUILayout.Label($"Grounded: {(state.playerGrounded == 1 ? "Yes" : "No")}", labelStyle);
-        GUILayout.Label($"Can Dash: {(state.playerCanDash == 1 ? "Yes" : "No")}", labelStyle);
-        GUILayout.Label($"Can Attack: {(state.playerCanAttack == 1 ? "Yes" : "No")}", labelStyle);
-        GUILayout.Label($"Facing: {(state.playerFacingRight == 1 ? "Right" : "Left")}", labelStyle);
 
-        var invincibleStyle = new GUIStyle(labelStyle) {
-            normal = { textColor = state.playerInvincible == 1 ? Color.cyan : Color.white }
-        };
-        GUILayout.Label($"Invincible: {(state.playerInvincible == 1 ? "Yes" : "No")}", invincibleStyle);
+        var playerAnimState = (PlayerAnimationState)state.playerAnimationState;
+        GUILayout.Label($"Animation: {playerAnimState}", animStyle);
+        GUILayout.Label($"Progress: {state.playerAnimationProgress:P0}", animStyle);
 
-        if (HeroController.instance != null)
-        {
-            var cState = HeroController.instance.cState;
-            var activeStates = GetActivePlayerStates(cState);
-            var stateStyle = new GUIStyle(labelStyle) { normal = { textColor = Color.cyan } };
-            GUILayout.Label($"States: {activeStates}", stateStyle);
-
-            // Animation frame info
-            var animInfo = GetPlayerAnimationInfo();
-            if (animInfo.HasValue)
-            {
-                var (clipName, currentFrame, totalFrames, progress) = animInfo.Value;
-                var animStyle = new GUIStyle(labelStyle) { normal = { textColor = new Color(1f, 0.8f, 0.4f) } };
-                GUILayout.Label($"Anim: {clipName}", animStyle);
-                GUILayout.Label($"Frame: {currentFrame} / {totalFrames} ({progress:P0})", animStyle);
-            }
-        }
+        string playerFlags = string.Join(" ", new[] {
+            state.playerGrounded == 1 ? "GND" : null,
+            state.playerCanDash == 1 ? "DASH" : null,
+            state.playerCanAttack == 1 ? "ATK" : null,
+            state.playerInvincible == 1 ? "INV" : null,
+            state.playerFacingRight == 1 ? "RIGHT" : "LEFT"
+        }.Where(s => s != null));
+        GUILayout.Label($"Flags: {playerFlags}", flagStyle);
         GUILayout.Space(10);
 
-        GUILayout.Label("BOSS STATE", headerStyle);
+        // Boss State
+        GUILayout.Label("BOSS", headerStyle);
         GUILayout.Label($"Position: ({state.bossPosX:F2}, {state.bossPosY:F2})", labelStyle);
         GUILayout.Label($"Velocity: ({state.bossVelX:F2}, {state.bossVelY:F2})", labelStyle);
         GUILayout.Label($"Health: {state.bossHealth} / {state.bossMaxHealth}", labelStyle);
         GUILayout.Label($"Phase: {state.bossPhase}", labelStyle);
-        GUILayout.Label($"Facing: {(state.bossFacingRight == 1 ? "Right" : "Left")}", labelStyle);
 
-        string attackStateName = GetAttackStateName((BossAttackState)state.bossAttackState);
-        Color attackColor = GetAttackStateColor((BossAttackState)state.bossAttackState);
-        var attackStyle = new GUIStyle(labelStyle) { normal = { textColor = attackColor } };
-        GUILayout.Label($"Attack: {attackStateName}", attackStyle);
+        var bossAnimState = (BossAnimationState)state.bossAnimationState;
+        GUILayout.Label($"Animation: {bossAnimState}", animStyle);
+        GUILayout.Label($"Progress: {state.bossAnimationProgress:P0}", animStyle);
+
+        string bossFlags = state.bossFacingRight == 1 ? "RIGHT" : "LEFT";
+        GUILayout.Label($"Facing: {bossFlags}", flagStyle);
 
         float distance = Mathf.Sqrt(
             Mathf.Pow(state.bossPosX - state.playerPosX, 2) +
             Mathf.Pow(state.bossPosY - state.playerPosY, 2)
         );
-        GUILayout.Label($"Distance: {distance:F2}", labelStyle);
+        GUILayout.Label($"Distance to Player: {distance:F2}", labelStyle);
         GUILayout.Space(10);
 
-        GUILayout.Label("EPISODE INFO", headerStyle);
+        // Episode State
+        GUILayout.Label("EPISODE", headerStyle);
         GUILayout.Label($"Time: {state.episodeTime:F2}s", labelStyle);
         GUILayout.Label($"Steps/sec: {stepsPerSecond:F1}", labelStyle);
         GUILayout.Label($"Terminated: {(state.terminated == 1 ? "Yes" : "No")}", labelStyle);
         GUILayout.Label($"Truncated: {(state.truncated == 1 ? "Yes" : "No")}", labelStyle);
         GUILayout.Space(10);
 
+        // Raycast Summary
+        GUILayout.Label("RAYCAST", headerStyle);
+        var hitTypeCounts = GetRaycastHitTypeCounts(state);
+        GUILayout.Label($"Hits: {hitTypeCounts}", labelStyle);
+        GUILayout.Space(10);
+
+        // Controls
         GUILayout.Label("CONTROLS", headerStyle);
-        GUILayout.Label("F1: Toggle this UI", labelStyle);
-        GUILayout.Label("F2: Toggle Raycasts", labelStyle);
+        GUILayout.Label("F1: Toggle UI | F2: Toggle Raycasts", labelStyle);
 
         GUILayout.EndArea();
 
         DrawInputVisualization();
+    }
+
+    private unsafe string GetRaycastHitTypeCounts(GameState state)
+    {
+        int terrain = 0, enemy = 0, projectile = 0, bossProjectile = 0, hazard = 0;
+
+        for (int i = 0; i < Constants.RayCount; i++)
+        {
+            var hitType = (RaycastHitType)state.raycastHitTypes[i];
+            switch (hitType)
+            {
+                case RaycastHitType.Terrain: terrain++; break;
+                case RaycastHitType.Enemy: enemy++; break;
+                case RaycastHitType.Projectile: projectile++; break;
+                case RaycastHitType.BossProjectile: bossProjectile++; break;
+                case RaycastHitType.Hazard: hazard++; break;
+            }
+        }
+
+        var parts = new[] {
+            terrain > 0 ? $"T:{terrain}" : null,
+            enemy > 0 ? $"E:{enemy}" : null,
+            projectile > 0 ? $"P:{projectile}" : null,
+            bossProjectile > 0 ? $"BP:{bossProjectile}" : null,
+            hazard > 0 ? $"H:{hazard}" : null
+        }.Where(s => s != null);
+
+        return parts.Any() ? string.Join(" ", parts) : "None";
     }
 
     private void DrawInputVisualization()
@@ -508,12 +509,11 @@ public class DebugOverlayManager : MonoBehaviour
             RaycastHitType.Terrain => RaycastColorTerrain,
             RaycastHitType.Enemy => RaycastColorEnemy,
             RaycastHitType.Projectile => RaycastColorProjectile,
+            RaycastHitType.BossProjectile => RaycastColorBossProjectile,
             RaycastHitType.Hazard => RaycastColorHazard,
             _ => RaycastColorNone
         };
     }
-
-    private Material lineMaterial;
 
     private GameState? GetCurrentGameState()
     {
@@ -521,103 +521,6 @@ public class DebugOverlayManager : MonoBehaviour
             return null;
 
         return GameStateCollector.CollectGameState();
-    }
-
-    private (string clipName, int currentFrame, int totalFrames, float progress)? GetPlayerAnimationInfo()
-    {
-        if (HeroController.instance == null || HeroController.instance.animCtrl == null)
-            return null;
-
-        var animator = HeroController.instance.animCtrl.animator;
-        if (animator == null)
-            return null;
-
-        var clip = animator.CurrentClip;
-        if (clip == null || clip.frames == null || clip.frames.Length == 0)
-            return null;
-
-        int currentFrame = animator.CurrentFrame;
-        int totalFrames = clip.frames.Length;
-        float progress = (float)currentFrame / totalFrames;
-
-        return (clip.name, currentFrame, totalFrames, progress);
-    }
-
-    private string GetAttackStateName(BossAttackState state)
-    {
-        return state switch
-        {
-            BossAttackState.Idle => "Idle",
-            BossAttackState.Hop => "Hop",
-            BossAttackState.Pose => "Pose",
-            BossAttackState.ComboSlashAntic => "Combo Antic",
-            BossAttackState.ComboSlashAttack => "Combo Attack",
-            BossAttackState.CounterAntic => "Counter Antic",
-            BossAttackState.CounterStance => "Counter Stance",
-            BossAttackState.CounterAttack => "Counter Attack",
-            BossAttackState.RapidSlashAntic => "RapidSlash Antic",
-            BossAttackState.RapidSlashAttack => "RapidSlash Attack",
-            BossAttackState.JSlashAntic => "JSlash Antic",
-            BossAttackState.JSlashAttack => "JSlash Attack",
-            BossAttackState.DownstabAntic => "Downstab Antic",
-            BossAttackState.DownstabAttack => "Downstab Attack",
-            BossAttackState.ChargeAntic => "Charge Antic",
-            BossAttackState.ChargeAttack => "Charge Attack",
-            BossAttackState.CrossSlashAntic => "CrossSlash Antic",
-            BossAttackState.CrossSlashAttack => "CrossSlash Attack",
-            BossAttackState.Evade => "Evade",
-            BossAttackState.Stun => "Stun",
-            BossAttackState.Teleport => "Teleport",
-            BossAttackState.PhaseTransition => "Phase Transition",
-            BossAttackState.QuickSlashAttack => "Quick Slash",
-            BossAttackState.Unknown => "Unknown",
-            _ => "Invalid"
-        };
-    }
-
-    private Color GetAttackStateColor(BossAttackState state)
-    {
-        return state switch
-        {
-            BossAttackState.Idle => Color.green,
-            BossAttackState.Hop => new Color(0.5f, 1f, 0.5f),
-            BossAttackState.Pose => new Color(0.3f, 0.8f, 0.3f),
-            BossAttackState.ComboSlashAntic => Color.yellow,
-            BossAttackState.CounterAntic => Color.yellow,
-            BossAttackState.RapidSlashAntic => Color.yellow,
-            BossAttackState.JSlashAntic => Color.yellow,
-            BossAttackState.DownstabAntic => Color.yellow,
-            BossAttackState.ChargeAntic => Color.yellow,
-            BossAttackState.CrossSlashAntic => Color.yellow,
-            BossAttackState.CounterStance => new Color(1f, 0.5f, 0f),
-            BossAttackState.Evade => Color.cyan,
-            BossAttackState.Stun => Color.magenta,
-            BossAttackState.Teleport => Color.blue,
-            BossAttackState.PhaseTransition => new Color(1f, 0f, 1f),
-            BossAttackState.Unknown => Color.gray,
-            _ => Color.red
-        };
-    }
-
-    private string GetActivePlayerStates(HeroControllerStates cState)
-    {
-        var states = new System.Collections.Generic.List<string>();
-
-        if (cState.attacking) states.Add("ATK");
-        if (cState.dashing) states.Add("DASH");
-        if (cState.jumping) states.Add("JUMP");
-        if (cState.falling) states.Add("FALL");
-        if (cState.focusing) states.Add("FOCUS");
-        if (cState.casting) states.Add("CAST");
-        if (cState.recoiling) states.Add("RECOIL");
-        if (cState.wallSliding) states.Add("WALL");
-        if (cState.parrying) states.Add("PARRY");
-        if (cState.evading) states.Add("EVADE");
-        if (cState.bouncing) states.Add("BOUNCE");
-        if (cState.downAttacking) states.Add("DNATK");
-        if (cState.upAttacking) states.Add("UPATK");
-
-        return states.Count > 0 ? string.Join(", ", states) : "IDLE";
     }
 
     private void OnDestroy()

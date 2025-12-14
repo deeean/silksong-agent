@@ -1,4 +1,5 @@
 using System;
+using System.Reflection;
 using System.Threading;
 using BepInEx;
 using BepInEx.Logging;
@@ -51,6 +52,27 @@ public class Plugin : BaseUnityPlugin
 
         Application.targetFrameRate = -1;
         QualitySettings.vSyncCount = 0;
+
+        CheatManager.SceneEntryWait = 0f;
+        CheatManager.DisableMusicSync = true;
+        CheatManager.IsWorldRumbleDisabled = true;
+        CheatManager.BoostModeActive = true;
+
+        CameraShakeManager.ShakeSetting = CameraShakeManager.ShakeSettings.Off;
+        VibrationManager.VibrationSetting = VibrationManager.VibrationSettings.Off;
+
+        // Skip entry animations by setting ProjectBenchmark.IsRunning = true
+        var backingField = typeof(ProjectBenchmark).GetField("<IsRunning>k__BackingField", BindingFlags.NonPublic | BindingFlags.Static);
+        backingField?.SetValue(null, true);
+    }
+
+    private void Start()
+    {
+        // Set particle effects level after GameSettings is initialized
+        if (GameManager.instance != null && GameManager.instance.gameSettings != null)
+        {
+            GameManager.instance.gameSettings.particleEffectsLevel = 0;
+        }
     }
 
     private void ParseCommandLineArgs()
