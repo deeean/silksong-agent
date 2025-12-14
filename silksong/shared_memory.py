@@ -167,15 +167,9 @@ class GameState:
         state_obs.extend(player_anim_one_hot)
         state_obs.append(np.clip(self.player_animation_progress, 0.0, 1.0))
 
-        hit_types_one_hot = np.zeros((NUM_RAYS, NUM_HIT_TYPES), dtype=np.float32)
-        for i, hit_type in enumerate(self.raycast_hit_types):
-            idx = int(hit_type)
-            if 0 <= idx < NUM_HIT_TYPES:
-                hit_types_one_hot[i, idx] = 1.0
-
         raycast_obs = np.concatenate([
             self.raycast_distances,
-            hit_types_one_hot.flatten()
+            self.raycast_hit_types
         ])
 
         observe = np.concatenate([

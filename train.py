@@ -92,7 +92,7 @@ def train(
 
     policy_kwargs = dict(
         features_extractor_class=MultiHeadFeatureExtractor,
-        features_extractor_kwargs=dict(features_dim=128),
+        features_extractor_kwargs=dict(features_dim=256),
         net_arch=dict(pi=[128], vf=[128]),
         activation_fn=nn.ReLU,
     )

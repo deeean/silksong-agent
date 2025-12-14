@@ -6,12 +6,16 @@ import torch.nn as nn
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
-from silksong.constants import STATE_DIM, RAYCAST_DIM
+from silksong.constants import STATE_DIM, RAYCAST_DIM, NUM_RAYS, NUM_HIT_TYPES, HIT_TYPE_EMBED_DIM
 
 
 class MultiHeadFeatureExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space, features_dim: int = 128):
         super().__init__(observation_space, features_dim)
+
+        self.hit_type_embedding = nn.Embedding(NUM_HIT_TYPES, HIT_TYPE_EMBED_DIM)
+
+        raycast_input_dim = NUM_RAYS + NUM_RAYS * HIT_TYPE_EMBED_DIM
 
         self.state_branch = nn.Sequential(
             nn.Linear(STATE_DIM, 128),
@@ -22,7 +26,7 @@ class MultiHeadFeatureExtractor(BaseFeaturesExtractor):
         )
 
         self.raycast_branch = nn.Sequential(
-            nn.Linear(RAYCAST_DIM, 128),
+            nn.Linear(raycast_input_dim, 128),
             nn.ReLU(),
             nn.LayerNorm(128),
             nn.Linear(128, 128),
@@ -40,7 +44,15 @@ class MultiHeadFeatureExtractor(BaseFeaturesExtractor):
 
     def forward(self, observations: torch.Tensor) -> torch.Tensor:
         state_obs = observations[:, :STATE_DIM]
-        raycast_obs = observations[:, STATE_DIM:]
+        raycast_raw = observations[:, STATE_DIM:]
+
+        distances = raycast_raw[:, :NUM_RAYS]
+        hit_type_indices = raycast_raw[:, NUM_RAYS:NUM_RAYS * 2].long().clamp(0, NUM_HIT_TYPES - 1)
+
+        hit_type_embedded = self.hit_type_embedding(hit_type_indices)
+        hit_type_flat = hit_type_embedded.view(hit_type_embedded.size(0), -1)
+
+        raycast_obs = torch.cat([distances, hit_type_flat], dim=-1)
 
         state_features = self.state_branch(state_obs)
         raycast_features = self.raycast_branch(raycast_obs)
