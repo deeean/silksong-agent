@@ -137,12 +137,8 @@ class SilksongBossEnv(gym.Env):
         elif too_close:
             reward -= 0.001
 
-        if game_state.player_health <= 0:
-            reward -= game_state.boss_health / BOSS_MAX_HEALTH
-        if game_state.boss_health <= 0:
-            reward += game_state.player_health / PLAYER_MAX_HEALTH
-
-        reward -= 0.0005
+        if boss_dmg == 0 and player_dmg == 0:
+            reward -= 0.0001
 
         return reward
 

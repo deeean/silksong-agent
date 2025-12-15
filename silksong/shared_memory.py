@@ -125,15 +125,11 @@ class GameState:
         norm_boss_vel_x = (self.boss_vel_x - BOSS_VEL_X_RANGE[0]) / (BOSS_VEL_X_RANGE[1] - BOSS_VEL_X_RANGE[0])
         norm_boss_vel_y = (self.boss_vel_y - BOSS_VEL_Y_RANGE[0]) / (BOSS_VEL_Y_RANGE[1] - BOSS_VEL_Y_RANGE[0])
 
-        boss_anim_one_hot = np.zeros(NUM_BOSS_ANIMATION_STATES, dtype=np.float32)
-        if 0 <= self.boss_animation_state < NUM_BOSS_ANIMATION_STATES:
-            boss_anim_one_hot[self.boss_animation_state] = 1.0
-
         rel_x = (self.boss_pos_x - self.player_pos_x) / (ARENA_MAX_X - ARENA_MIN_X)
         rel_y = (self.boss_pos_y - self.player_pos_y) / (ARENA_MAX_Y - ARENA_MIN_Y)
         distance = np.sqrt((self.boss_pos_x - self.player_pos_x)**2 + (self.boss_pos_y - self.player_pos_y)**2) / self.MAX_DISTANCE
 
-        state_obs = [
+        state_obs = np.array([
             np.clip(norm_player_x, 0.0, 1.0),
             np.clip(norm_player_y, 0.0, 1.0),
             np.clip(norm_player_vel_x, 0.0, 1.0),
@@ -155,17 +151,11 @@ class GameState:
             np.clip(rel_x + 0.5, 0.0, 1.0),
             np.clip(rel_y + 0.5, 0.0, 1.0),
             np.clip(distance, 0.0, 1.0),
-        ]
-
-        state_obs.extend(boss_anim_one_hot)
-        state_obs.append(np.clip(self.boss_animation_progress, 0.0, 1.0))
-
-        player_anim_one_hot = np.zeros(NUM_PLAYER_ANIMATION_STATES, dtype=np.float32)
-        if 0 <= self.player_animation_state < NUM_PLAYER_ANIMATION_STATES:
-            player_anim_one_hot[self.player_animation_state] = 1.0
-
-        state_obs.extend(player_anim_one_hot)
-        state_obs.append(np.clip(self.player_animation_progress, 0.0, 1.0))
+            float(np.clip(self.boss_animation_state, 0, NUM_BOSS_ANIMATION_STATES - 1)),
+            np.clip(self.boss_animation_progress, 0.0, 1.0),
+            float(np.clip(self.player_animation_state, 0, NUM_PLAYER_ANIMATION_STATES - 1)),
+            np.clip(self.player_animation_progress, 0.0, 1.0),
+        ], dtype=np.float32)
 
         raycast_obs = np.concatenate([
             self.raycast_distances,
@@ -173,7 +163,7 @@ class GameState:
         ])
 
         observe = np.concatenate([
-            np.array(state_obs, dtype=np.float32),
+            state_obs,
             raycast_obs.astype(np.float32)
         ])
 

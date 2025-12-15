@@ -245,14 +245,14 @@ if __name__ == "__main__":
     else:
         train(
             total_timesteps=10_000_000,
-            learning_rate=1e-4,
+            learning_rate=5e-4,
             n_steps=2048,
             batch_size=2048,
             n_epochs=4,
             gamma=0.99,
             gae_lambda=0.95,
             clip_range=0.1,
-            ent_coef=0.02,
+            ent_coef=0.03,
             vf_coef=0.5,
             max_grad_norm=0.3,
             checkpoint_path=args.checkpoint,
