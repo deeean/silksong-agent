@@ -251,7 +251,7 @@ if __name__ == "__main__":
             n_epochs=4,
             gamma=0.99,
             gae_lambda=0.95,
-            clip_range=0.2,
+            clip_range=0.1,
             ent_coef=0.03,
             vf_coef=0.5,
             max_grad_norm=0.3,
