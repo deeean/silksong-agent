@@ -396,7 +396,16 @@ public class SharedMemoryManager : MonoBehaviour
                 break;
             case CommandType.Reset:
                 StepModeManager.Instance.DisableStepMode();
-                GameManager.instance.StartCoroutine(EpisodeResetter.ResetEpisode());
+                // First reset must be hard reset (player starts at different position)
+                // Subsequent resets use soft reset for speed
+                if (EpisodeResetter.IsInitialStateCaptured)
+                {
+                    GameManager.instance.StartCoroutine(EpisodeResetter.SoftResetEpisode());
+                }
+                else
+                {
+                    GameManager.instance.StartCoroutine(EpisodeResetter.ResetEpisode());
+                }
                 break;
             case CommandType.None:
             default:

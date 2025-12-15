@@ -27,5 +27,5 @@ public static class Constants
 
     public const int ConsecutiveFrameThreshold = 3;
 
-    public const int NumPlayerAnimationStates = 83; // 82 animations + Unknown
+    public const int NumPlayerAnimationStates = 83;
 }

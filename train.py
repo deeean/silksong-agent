@@ -53,8 +53,8 @@ def train(
     checkpoint_path: str = None,
     n_envs: int = 1,
     time_scale: float = 4.0,
-    nofx: bool = False,
     device: Union[torch.device, str] = "cuda" if torch.cuda.is_available() else "cpu",
+    nofx: bool = False,
 ):
     resuming = checkpoint_path and os.path.exists(checkpoint_path)
 
