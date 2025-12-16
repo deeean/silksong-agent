@@ -14,5 +14,7 @@ obj/
 bin/
 logs/
 models/
+hyperparameters/
 Reference/
 *.csv
+*.db

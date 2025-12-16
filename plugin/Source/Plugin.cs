@@ -61,14 +61,12 @@ public class Plugin : BaseUnityPlugin
         CameraShakeManager.ShakeSetting = CameraShakeManager.ShakeSettings.Off;
         VibrationManager.VibrationSetting = VibrationManager.VibrationSettings.Off;
 
-        // Skip entry animations by setting ProjectBenchmark.IsRunning = true
         var backingField = typeof(ProjectBenchmark).GetField("<IsRunning>k__BackingField", BindingFlags.NonPublic | BindingFlags.Static);
         backingField?.SetValue(null, true);
     }
 
     private void Start()
     {
-        // Set particle effects level after GameSettings is initialized
         if (GameManager.instance != null && GameManager.instance.gameSettings != null)
         {
             GameManager.instance.gameSettings.particleEffectsLevel = 0;
@@ -95,7 +93,7 @@ public class Plugin : BaseUnityPlugin
          }
          else
          {
-             Time.timeScale = IsReady ? CommandLineArgs.TimeScale : 100.0f;
+             Time.timeScale = IsReady ? CommandLineArgs.TimeScale : 10.0f;
          }
     }
 }

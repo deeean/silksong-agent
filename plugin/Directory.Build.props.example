@@ -1,8 +1,5 @@
 <Project>
   <PropertyGroup>
-    <SILKSONG_PATH_1></SILKSONG_PATH_1>
-    <SILKSONG_PATH_2></SILKSONG_PATH_2>
-    <SILKSONG_PATH_3></SILKSONG_PATH_3>
-    <SILKSONG_PATH_4></SILKSONG_PATH_4>
+    <SILKSONG_PATH></SILKSONG_PATH>
   </PropertyGroup>
 </Project>

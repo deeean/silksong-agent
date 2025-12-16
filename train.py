@@ -17,6 +17,13 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNorm
 
 from silksong import SilksongBossEnv, MultiHeadFeatureExtractor, TensorboardCallback
 
+_next_env_id = 1
+
+
+def reset_env_id_counter():
+    global _next_env_id
+    _next_env_id = 1
+
 
 def _make_env(env_id: int, time_scale: float = 1.0, nofx: bool = False):
     env = SilksongBossEnv(env_id, time_scale=time_scale, nofx=nofx)
@@ -25,10 +32,13 @@ def _make_env(env_id: int, time_scale: float = 1.0, nofx: bool = False):
 
 
 def create_vec_env(n_envs: int = 1, time_scale: float = 1.0, nofx: bool = False):
-    if n_envs < 1 or n_envs > 4:
-        raise ValueError(f"n_envs must be between 1 and 4, got {n_envs}")
+    global _next_env_id
+    if n_envs < 1:
+        raise ValueError(f"n_envs must be >= 1, got {n_envs}")
 
-    env_fns = [partial(_make_env, env_id=i+1, time_scale=time_scale, nofx=nofx) for i in range(n_envs)]
+    start_id = _next_env_id
+    _next_env_id += n_envs
+    env_fns = [partial(_make_env, env_id=start_id+i, time_scale=time_scale, nofx=nofx) for i in range(n_envs)]
 
     if n_envs > 1:
         return SubprocVecEnv(env_fns, start_method='spawn')
@@ -181,11 +191,12 @@ def train(
         env.close()
 
 
-def evaluate(model_path: str, n_episodes: int = 10, time_scale: float = 1.0):
+def evaluate(model_path: str, n_episodes: int = 10, time_scale: float = 1.0, nofx: bool = False):
     print(f"\nEvaluating model: {model_path}")
     print(f"Time scale: {time_scale}")
+    print(f"NoFx: {nofx}")
 
-    env = DummyVecEnv([partial(_make_env, env_id=1, time_scale=time_scale)])
+    env = DummyVecEnv([partial(_make_env, env_id=1, time_scale=time_scale, nofx=nofx)])
 
     vecnormalize_path = model_path.replace(".zip", "_vecnormalize.pkl")
     if os.path.exists(vecnormalize_path):
@@ -234,7 +245,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--eval", action="store_true")
     parser.add_argument("--checkpoint", type=str)
-    parser.add_argument("--n_envs", type=int, default=1, choices=[1, 2, 3, 4])
+    parser.add_argument("--n_envs", type=int, default=1)
 
     args = parser.parse_args()
 

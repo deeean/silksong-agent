@@ -34,16 +34,10 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <SilksongPluginPath1 Condition="'$(SILKSONG_PATH_1)' != ''">$([System.IO.Path]::GetDirectoryName($(SILKSONG_PATH_1)))/BepInEx/plugins</SilksongPluginPath1>
-    <SilksongPluginPath2 Condition="'$(SILKSONG_PATH_2)' != ''">$([System.IO.Path]::GetDirectoryName($(SILKSONG_PATH_2)))/BepInEx/plugins</SilksongPluginPath2>
-    <SilksongPluginPath3 Condition="'$(SILKSONG_PATH_3)' != ''">$([System.IO.Path]::GetDirectoryName($(SILKSONG_PATH_3)))/BepInEx/plugins</SilksongPluginPath3>
-    <SilksongPluginPath4 Condition="'$(SILKSONG_PATH_4)' != ''">$([System.IO.Path]::GetDirectoryName($(SILKSONG_PATH_4)))/BepInEx/plugins</SilksongPluginPath4>
+    <SilksongPluginPath Condition="'$(SILKSONG_PATH)' != ''">$([System.IO.Path]::GetDirectoryName($(SILKSONG_PATH)))/BepInEx/plugins</SilksongPluginPath>
   </PropertyGroup>
 
   <Target Name="Copy" AfterTargets="Build">
-    <Copy Condition="'$(SilksongPluginPath1)' != ''" SourceFiles="$(TargetPath);$(TargetDir)/$(TargetName).pdb" DestinationFolder="$(SilksongPluginPath1)"/>
-    <Copy Condition="'$(SilksongPluginPath2)' != ''" SourceFiles="$(TargetPath);$(TargetDir)/$(TargetName).pdb" DestinationFolder="$(SilksongPluginPath2)"/>
-    <Copy Condition="'$(SilksongPluginPath3)' != ''" SourceFiles="$(TargetPath);$(TargetDir)/$(TargetName).pdb" DestinationFolder="$(SilksongPluginPath3)"/>
-    <Copy Condition="'$(SilksongPluginPath4)' != ''" SourceFiles="$(TargetPath);$(TargetDir)/$(TargetName).pdb" DestinationFolder="$(SilksongPluginPath4)"/>
+    <Copy Condition="'$(SilksongPluginPath)' != ''" SourceFiles="$(TargetPath);$(TargetDir)/$(TargetName).pdb" DestinationFolder="$(SilksongPluginPath)"/>
   </Target>
 </Project>

@@ -118,9 +118,11 @@ class SilksongBossEnv(gym.Env):
         reward = 0.0
 
         if boss_dmg > 0:
+            # 0.02625
             reward += (boss_dmg / BOSS_MAX_HEALTH)
             self.attack_count += 1
         if player_dmg > 0:
+            # 0.0222222222222222
             reward -= (player_dmg / PLAYER_MAX_HEALTH) * 0.2
             self.hurt_count += 1
 

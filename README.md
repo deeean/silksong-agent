@@ -17,12 +17,11 @@ A reinforcement learning agent for Hollow Knight: Silksong boss fights.
 
 ### 1. Game Setup
 
-You can run up to 4 game instances simultaneously during training. Each instance requires a separate copy of the game.
-
 1. Disable Steam Cloud synchronization
 2. Install BepInEx in the Steam game installation folder
 3. Create `steam_appid.txt` in the game folder and enter `1030300`
-4. Copy this folder to 4 separate locations
+
+> **Note**: Multiple game instances are automatically created at runtime using junctions and hard links. No manual copying required.
 
 ### 2. Save File Setup
 
@@ -35,12 +34,10 @@ Copy [resources/user1.dat](resources/user1.dat) to:
 
 1. Copy `plugin/Directory.Build.props.example` → `plugin/Directory.Build.props`
 2. Copy `.env.example` → `.env`
-3. Set `SILKSONG_PATH_1` to `SILKSONG_PATH_4` to the game executable paths
+3. Set `SILKSONG_PATH` to the game executable path
 
 ```
-SILKSONG_PATH_1=D:/Games/Silksong 1/Hollow Knight Silksong.exe
-SILKSONG_PATH_2=D:/Games/Silksong 2/Hollow Knight Silksong.exe
-...
+SILKSONG_PATH=D:/Games/Silksong/Hollow Knight Silksong.exe
 ```
 
 ### 4. Build Plugin
@@ -49,7 +46,7 @@ SILKSONG_PATH_2=D:/Games/Silksong 2/Hollow Knight Silksong.exe
 dotnet build plugin
 ```
 
-The built plugin will be automatically copied to each game's `BepInEx/plugins/` folder.
+The built plugin will be automatically copied to the game's `BepInEx/plugins/` folder.
 
 ## Usage
 
@@ -61,7 +58,7 @@ uv run train.py --n_envs 4
 uv run train.py --n_envs 4 --checkpoint ./models/rl_model_1000_steps.zip
 ```
 
-> **Tip**: Using a smaller game window size speeds up step processing.
+> **Tip**: Use `-nofx` mode (enabled by default in training) for faster step processing.
 
 ### Evaluation
 
@@ -69,11 +66,23 @@ uv run train.py --n_envs 4 --checkpoint ./models/rl_model_1000_steps.zip
 uv run train.py --eval --checkpoint ./models/rl_model_1000_steps.zip
 ```
 
+### Hyperparameter Tuning
+
+```bash
+uv run tune.py --n_trials 30 --n_envs 2
+```
+
+| Argument | Description |
+|----------|-------------|
+| `--n_trials` | Number of Optuna trials (default: 30) |
+| `--timesteps` | Timesteps per trial (default: 200,000) |
+| `--storage` | Optuna storage URL (e.g., `sqlite:///study.db`) |
+
 ### Arguments
 
 | Argument | Description |
 |----------|-------------|
-| `--n_envs <n>` | Number of parallel environments (1-4, default: 1) |
+| `--n_envs <n>` | Number of parallel environments (default: 1) |
 | `--checkpoint <path>` | Resume training from checkpoint |
 | `--eval` | Evaluation mode (requires --checkpoint) |
 
@@ -83,23 +92,60 @@ uv run train.py --eval --checkpoint ./models/rl_model_1000_steps.zip
 tensorboard --logdir ./logs
 ```
 
+## Multi-Instance Architecture
+
+When running with `--n_envs > 1`, the system automatically creates instance folders:
+
+```
+Hollow Knight Silksong/
+├── Hollow Knight Silksong.exe           # Original (not used)
+├── Hollow Knight Silksong_Data/
+├── BepInEx/
+├── MonoBleedingEdge/
+└── instances/
+    ├── 1/
+    │   ├── Hollow Knight Silksong.exe   # Copy
+    │   ├── Hollow Knight Silksong_Data/ # Junction → Original
+    │   ├── MonoBleedingEdge/            # Junction → Original
+    │   ├── UnityPlayer.dll              # Hard link → Original
+    │   └── BepInEx/
+    │       ├── plugins/                 # Junction → Original
+    │       └── config/                  # Copy (separate per instance)
+    ├── 2/
+    │   └── ...
+```
+
+- **Junctions**: Folders (no admin required)
+- **Hard links**: Large files like `UnityPlayer.dll` (saves disk space)
+- **Copies**: Config files (avoid sharing conflicts)
+
 ## Game Plugin
 
 ### Launch Arguments
 
 | Argument | Description |
 |----------|-------------|
-| `-id <n>` | Instance ID (1-4) |
+| `-id <n>` | Instance ID |
 | `-timescale <n>` | Game speed multiplier (training: 4, evaluation: 1) |
 | `-manual` | Manual mode (enables keyboard input) |
-| `-nofx` | Disable visual effects |
+| `-nofx` | Disable visual/audio effects for performance |
+
+### NoFx Mode
+
+The `-nofx` flag significantly reduces CPU/GPU usage by disabling:
+- Visual effects (particles, trails, blur, post-processing)
+- Audio components
+- Camera effects
+- Vibration/haptics
+
+Press `F9` to toggle minimal rendering (16x16 resolution) during NoFx mode.
 
 ### Manual Mode
 
 When the game runs with the plugin installed, keyboard input is blocked and the Lace boss fight starts automatically. Use the `-manual` argument when you need to modify equipment/items.
 
 ```bash
-"D:/Games/Silksong 1/Hollow Knight Silksong.exe" -manual
+"D:/Games/Silksong/Hollow Knight Silksong.exe" -manual
 ```
 
 ### Debug Overlay
@@ -108,8 +154,9 @@ When the game runs with the plugin installed, keyboard input is blocked and the 
 |-----|--------|
 | `F1` | Toggle state UI overlay |
 | `F2` | Toggle raycast visualization |
+| `F9` | Toggle minimal rendering (NoFx mode only) |
 
-## Architecture
+## Communication Architecture
 
 ```
 ┌─────────────────┐     Shared Memory      ┌─────────────────┐
@@ -140,11 +187,6 @@ To train on other bosses, modify the following files:
 | `plugin/Source/Managers/SharedMemoryManager.cs` | GameState structure (C#) |
 
 > **Tip**: Analyze the boss's state through PlayMakerFSM.
-
-## Notes
-
-- Game audio is disabled by the plugin.
-- Initially, the reward was designed as binary (hit/hurt). However, the agent learned to spam the Clawline skill because it deals multiple hits despite low damage per hit. The reward has been changed to damage-proportional.
 
 ## Acknowledgments
 

@@ -1,12 +1,14 @@
 import atexit
 import ctypes
 import os
+import shutil
 import signal
 import struct
 import subprocess
 from enum import IntEnum
 from multiprocessing import shared_memory
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -187,12 +189,114 @@ class SilkSongSharedMemory:
     )
     GAME_STATE_SIZE = struct.calcsize(GAME_STATE_FORMAT)
 
-    MAX_ENVS = 4
     DEFAULT_TIMEOUT_MS = 30000
 
     @staticmethod
+    def _create_junction(link_path: Path, target_path: Path):
+        """Create a directory junction (works without admin)."""
+        subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(link_path), str(target_path)],
+            check=True,
+            capture_output=True
+        )
+
+    @staticmethod
+    def _create_hardlink(link_path: Path, target_path: Path):
+        """Create a hard link for files (works without admin, same volume only)."""
+        subprocess.run(
+            ["cmd", "/c", "mklink", "/H", str(link_path), str(target_path)],
+            check=True,
+            capture_output=True
+        )
+
+    @staticmethod
     def get_game_path(env_id: int) -> str:
-        return os.getenv(f"SILKSONG_PATH_{env_id}")
+        base_path = os.getenv("SILKSONG_PATH")
+        if not base_path:
+            raise ValueError("SILKSONG_PATH environment variable is not set")
+
+        base_path = Path(base_path)
+        base_dir = base_path.parent
+        exe_name = base_path.name  # "Hollow Knight Silksong.exe"
+        data_folder_name = base_path.stem + "_Data"
+        base_bepinex = base_dir / "BepInEx"
+
+        # All instances go in instances folder (including env_id=1)
+        instance_dir = base_dir / "instances" / str(env_id)
+        instance_exe = instance_dir / exe_name
+        instance_bepinex = instance_dir / "BepInEx"
+
+        if instance_exe.exists():
+            return str(instance_exe)
+
+        # Create instance directory
+        instance_dir.mkdir(parents=True, exist_ok=True)
+
+        # Copy exe (small, needs to be separate)
+        shutil.copy2(base_path, instance_exe)
+
+        # Link folders (junction)
+        folders_to_link = [
+            data_folder_name,  # Hollow Knight Silksong_Data
+            "MonoBleedingEdge",
+            "D3D12",
+        ]
+        for folder in folders_to_link:
+            src = base_dir / folder
+            dst = instance_dir / folder
+            if src.exists() and not dst.exists():
+                SilkSongSharedMemory._create_junction(dst, src)
+
+        # Link large files (hard link)
+        files_to_link = [
+            "UnityPlayer.dll",
+            "UnityCrashHandler64.exe",
+        ]
+        for filename in files_to_link:
+            src = base_dir / filename
+            dst = instance_dir / filename
+            if src.exists() and not dst.exists():
+                SilkSongSharedMemory._create_hardlink(dst, src)
+
+        # Copy small files that may need to be separate
+        files_to_copy = [
+            "winhttp.dll",
+            "doorstop_config.ini",
+            ".doorstop_version",
+        ]
+        for filename in files_to_copy:
+            src = base_dir / filename
+            dst = instance_dir / filename
+            if src.exists() and not dst.exists():
+                shutil.copy2(src, dst)
+
+        # Create BepInEx folder structure
+        if base_bepinex.exists():
+            instance_bepinex.mkdir(parents=True, exist_ok=True)
+
+            # Copy BepInEx.Preloader.dll
+            preloader_src = base_bepinex / "BepInEx.Preloader.dll"
+            if preloader_src.exists():
+                shutil.copy2(preloader_src, instance_bepinex / "BepInEx.Preloader.dll")
+
+            # Junction shared folders
+            for folder in ["core", "plugins", "patchers"]:
+                src = base_bepinex / folder
+                dst = instance_bepinex / folder
+                if src.exists() and not dst.exists():
+                    SilkSongSharedMemory._create_junction(dst, src)
+
+            # Copy config folder (separate per instance to avoid conflicts)
+            config_src = base_bepinex / "config"
+            config_dst = instance_bepinex / "config"
+            if config_src.exists() and not config_dst.exists():
+                shutil.copytree(config_src, config_dst)
+
+            # Create cache folder
+            (instance_bepinex / "cache").mkdir(exist_ok=True)
+
+        print(f"[Env {env_id}] Created instance folder")
+        return str(instance_exe)
 
     def __init__(self, id: int, time_scale: float = 1.0, nofx: bool = False, timeout_ms: int = None):
         self.id = id
@@ -202,8 +306,8 @@ class SilkSongSharedMemory:
         self.event_handle = None
         self.timeout_ms = timeout_ms if timeout_ms is not None else self.DEFAULT_TIMEOUT_MS
 
-        if id < 1 or id > self.MAX_ENVS:
-            raise ValueError(f"Invalid environment ID: {id}. Must be 1-{self.MAX_ENVS}.")
+        if id < 1:
+            raise ValueError(f"Invalid environment ID: {id}. Must be >= 1.")
 
         game_path = self.get_game_path(id)
         shm_name = self.MEMORY_NAME + f"_{id}"
