@@ -43,7 +43,6 @@ public static class GameStateCollector
                 state.raycastHitTypes[i] = (int)hitTypes[i];
             }
 
-            // Animation state
             if (player.animCtrl != null && player.animCtrl.animator != null)
             {
                 var animator = player.animCtrl.animator;
@@ -82,7 +81,6 @@ public static class GameStateCollector
 
             state.bossFacingRight = (byte)(boss.transform.localScale.x > 0 ? 1 : 0);
 
-            // Boss animation state
             var bossAnimator = boss.GetComponent<tk2dSpriteAnimator>();
             if (bossAnimator != null)
             {

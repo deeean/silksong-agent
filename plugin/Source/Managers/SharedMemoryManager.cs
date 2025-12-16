@@ -236,7 +236,6 @@ public struct CommandData
 [StructLayout(LayoutKind.Sequential, Pack = 4)]
 public unsafe struct GameState
 {
-    // === Player ===
     public float playerPosX;
     public float playerPosY;
     public float playerVelX;
@@ -252,7 +251,6 @@ public unsafe struct GameState
     public byte playerInvincible;
     public byte playerCanAttack;
 
-    // === Boss ===
     public float bossPosX;
     public float bossPosY;
     public float bossVelX;
@@ -264,12 +262,10 @@ public unsafe struct GameState
     public float bossAnimationProgress;
     public byte bossFacingRight;
 
-    // === Episode ===
     public float episodeTime;
     public byte terminated;
     public byte truncated;
 
-    // === Raycast ===
     public fixed float raycastDistances[32];
     public fixed int raycastHitTypes[32];
 }
@@ -396,8 +392,6 @@ public class SharedMemoryManager : MonoBehaviour
                 break;
             case CommandType.Reset:
                 StepModeManager.Instance.DisableStepMode();
-                // First reset must be hard reset (player starts at different position)
-                // Subsequent resets use soft reset for speed
                 if (EpisodeResetter.IsInitialStateCaptured)
                 {
                     GameManager.instance.StartCoroutine(EpisodeResetter.SoftResetEpisode());

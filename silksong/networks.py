@@ -23,10 +23,8 @@ class MultiHeadFeatureExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space, features_dim: int = 256):
         super().__init__(observation_space, features_dim)
 
-        # State: base(21) + boss_anim_onehot(103) + boss_progress(1) + player_anim_onehot(83) + player_progress(1) = 209
         state_input_dim = self.BASE_STATE_DIM + NUM_BOSS_ANIMATION_STATES + 1 + NUM_PLAYER_ANIMATION_STATES + 1
 
-        # Raycast: distances(32) + hit_type_onehot(32 * 6) = 224
         raycast_input_dim = NUM_RAYS + NUM_RAYS * NUM_HIT_TYPES
 
         self.state_branch = nn.Sequential(

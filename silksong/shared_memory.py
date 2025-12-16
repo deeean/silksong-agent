@@ -217,11 +217,10 @@ class SilkSongSharedMemory:
 
         base_path = Path(base_path)
         base_dir = base_path.parent
-        exe_name = base_path.name  # "Hollow Knight Silksong.exe"
+        exe_name = base_path.name
         data_folder_name = base_path.stem + "_Data"
         base_bepinex = base_dir / "BepInEx"
 
-        # All instances go in instances folder (including env_id=1)
         instance_dir = base_dir / "instances" / str(env_id)
         instance_exe = instance_dir / exe_name
         instance_bepinex = instance_dir / "BepInEx"
@@ -229,15 +228,12 @@ class SilkSongSharedMemory:
         if instance_exe.exists():
             return str(instance_exe)
 
-        # Create instance directory
         instance_dir.mkdir(parents=True, exist_ok=True)
 
-        # Copy exe (small, needs to be separate)
         shutil.copy2(base_path, instance_exe)
 
-        # Link folders (junction)
         folders_to_link = [
-            data_folder_name,  # Hollow Knight Silksong_Data
+            data_folder_name,
             "MonoBleedingEdge",
             "D3D12",
         ]
@@ -247,7 +243,6 @@ class SilkSongSharedMemory:
             if src.exists() and not dst.exists():
                 SilkSongSharedMemory._create_junction(dst, src)
 
-        # Link large files (hard link)
         files_to_link = [
             "UnityPlayer.dll",
             "UnityCrashHandler64.exe",
@@ -258,7 +253,6 @@ class SilkSongSharedMemory:
             if src.exists() and not dst.exists():
                 SilkSongSharedMemory._create_hardlink(dst, src)
 
-        # Copy small files that may need to be separate
         files_to_copy = [
             "winhttp.dll",
             "doorstop_config.ini",
@@ -270,29 +264,24 @@ class SilkSongSharedMemory:
             if src.exists() and not dst.exists():
                 shutil.copy2(src, dst)
 
-        # Create BepInEx folder structure
         if base_bepinex.exists():
             instance_bepinex.mkdir(parents=True, exist_ok=True)
 
-            # Copy BepInEx.Preloader.dll
             preloader_src = base_bepinex / "BepInEx.Preloader.dll"
             if preloader_src.exists():
                 shutil.copy2(preloader_src, instance_bepinex / "BepInEx.Preloader.dll")
 
-            # Junction shared folders
             for folder in ["core", "plugins", "patchers"]:
                 src = base_bepinex / folder
                 dst = instance_bepinex / folder
                 if src.exists() and not dst.exists():
                     SilkSongSharedMemory._create_junction(dst, src)
 
-            # Copy config folder (separate per instance to avoid conflicts)
             config_src = base_bepinex / "config"
             config_dst = instance_bepinex / "config"
             if config_src.exists() and not config_dst.exists():
                 shutil.copytree(config_src, config_dst)
 
-            # Create cache folder
             (instance_bepinex / "cache").mkdir(exist_ok=True)
 
         print(f"[Env {env_id}] Created instance folder")

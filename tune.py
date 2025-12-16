@@ -98,14 +98,12 @@ def objective(
         print(f"  {key}: {value}")
     print(f"{'='*60}\n")
 
-    # Create environments
     env = create_vec_env(n_envs=n_envs, time_scale=time_scale, nofx=True)
     env = VecNormalize(env, norm_obs=False, norm_reward=True)
 
     eval_env = create_vec_env(n_envs=1, time_scale=time_scale, nofx=True)
     eval_env = VecNormalize(eval_env, norm_obs=False, norm_reward=False, training=False)
 
-    # Policy kwargs
     policy_kwargs = dict(
         features_extractor_class=MultiHeadFeatureExtractor,
         features_extractor_kwargs=dict(features_dim=params["features_dim"]),
@@ -218,7 +216,6 @@ def tune(
     except KeyboardInterrupt:
         print("\n\nTuning interrupted by user.")
 
-    # Print results
     print(f"\n{'='*60}")
     print("TUNING RESULTS")
     print(f"{'='*60}")
@@ -232,13 +229,11 @@ def tune(
         for key, value in best_trial.params.items():
             print(f"    {key}: {value}")
 
-        # Save best params
         best_params_path = os.path.join(output_dir, "best_params.json")
         with open(best_params_path, "w") as f:
             json.dump(best_trial.params, f, indent=2)
         print(f"\nBest params saved to: {best_params_path}")
 
-        # Save all trials
         trials_path = os.path.join(output_dir, "all_trials.json")
         trials_data = []
         for trial in study.trials:

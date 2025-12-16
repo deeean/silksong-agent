@@ -194,7 +194,6 @@ public class DebugOverlayManager : MonoBehaviour
         GUILayout.Label("=== GAMESTATE ===", headerStyle);
         GUILayout.Space(5);
 
-        // Player State
         GUILayout.Label("PLAYER", headerStyle);
         GUILayout.Label($"Position: ({state.playerPosX:F2}, {state.playerPosY:F2})", labelStyle);
         GUILayout.Label($"Velocity: ({state.playerVelX:F2}, {state.playerVelY:F2})", labelStyle);
@@ -215,7 +214,6 @@ public class DebugOverlayManager : MonoBehaviour
         GUILayout.Label($"Flags: {playerFlags}", flagStyle);
         GUILayout.Space(10);
 
-        // Boss State
         GUILayout.Label("BOSS", headerStyle);
         GUILayout.Label($"Position: ({state.bossPosX:F2}, {state.bossPosY:F2})", labelStyle);
         GUILayout.Label($"Velocity: ({state.bossVelX:F2}, {state.bossVelY:F2})", labelStyle);
@@ -236,7 +234,6 @@ public class DebugOverlayManager : MonoBehaviour
         GUILayout.Label($"Distance to Player: {distance:F2}", labelStyle);
         GUILayout.Space(10);
 
-        // Episode State
         GUILayout.Label("EPISODE", headerStyle);
         GUILayout.Label($"Time: {state.episodeTime:F2}s", labelStyle);
         GUILayout.Label($"Steps/sec: {stepsPerSecond:F1}", labelStyle);
@@ -244,13 +241,11 @@ public class DebugOverlayManager : MonoBehaviour
         GUILayout.Label($"Truncated: {(state.truncated == 1 ? "Yes" : "No")}", labelStyle);
         GUILayout.Space(10);
 
-        // Raycast Summary
         GUILayout.Label("RAYCAST", headerStyle);
         var hitTypeCounts = GetRaycastHitTypeCounts(state);
         GUILayout.Label($"Hits: {hitTypeCounts}", labelStyle);
         GUILayout.Space(10);
 
-        // Controls
         GUILayout.Label("CONTROLS", headerStyle);
         GUILayout.Label("F1: Toggle UI | F2: Toggle Raycasts", labelStyle);
 
