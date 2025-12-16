@@ -118,6 +118,8 @@ public static class EpisodeResetter
     private static FieldInfo _startWithAttackField;
     private static FieldInfo _startWithToolThrowField;
     private static FieldInfo _startWithWallJumpField;
+    private static FieldInfo _queuedWallJumpInterruptField;
+    private static FieldInfo _queuedAutoThrowToolField;
 
     private static FieldInfo _evasionByHitRemainingField;
     private static FieldInfo _rapidBulletTimerField;
@@ -157,6 +159,22 @@ public static class EpisodeResetter
 
     private static FieldInfo _enemyDeathEffectsDidFireField;
     private static FieldInfo _enemyDeathEffectsIsBlackThreadedField;
+
+    private static FieldInfo _enemyHitEffectsDidFireThisFrameField;
+    private static FieldInfo _enemyHitEffectsIsBlackThreadedField;
+
+    private static FieldInfo _triggerEnterEventActiveField;
+    private static FieldInfo _triggerEnterEventIsDelayingProcessListField;
+    private static FieldInfo _triggerEnterEventEnteredWhileInactiveField;
+    private static FieldInfo _triggerEnterEventExitedWhileDelayedField;
+    private static FieldInfo _triggerEnterEventDelayRoutineField;
+
+    private static FieldInfo _damageTagHitsLeftTrackerField;
+    private static FieldInfo _tagDamageTakerField;
+    private static FieldInfo _runningSingleLagHitsField;
+    private static FieldInfo _lastAttackTypeField;
+    private static FieldInfo _lastHitInstanceField;
+    private static FieldInfo _bouncePodLastAttackCountField;
 
     private static FieldInfo _randomEventLastEventIndexField;
     private static FieldInfo _arrayGetRandomLastIndexField;
@@ -268,6 +286,8 @@ public static class EpisodeResetter
         _startWithAttackField = heroType.GetField("startWithAttack", flags);
         _startWithToolThrowField = heroType.GetField("startWithToolThrow", flags);
         _startWithWallJumpField = heroType.GetField("startWithWallJump", flags);
+        _queuedWallJumpInterruptField = heroType.GetField("queuedWallJumpInterrupt", flags);
+        _queuedAutoThrowToolField = heroType.GetField("queuedAutoThrowTool", flags);
 
         var healthManagerType = typeof(HealthManager);
         _evasionByHitRemainingField = healthManagerType.GetField("evasionByHitRemaining", flags);
@@ -314,6 +334,27 @@ public static class EpisodeResetter
         var enemyDeathEffectsType = typeof(EnemyDeathEffects);
         _enemyDeathEffectsDidFireField = enemyDeathEffectsType.GetField("didFire", flags);
         _enemyDeathEffectsIsBlackThreadedField = enemyDeathEffectsType.GetField("isBlackThreaded", flags);
+
+        var enemyHitEffectsType = typeof(EnemyHitEffectsRegular);
+        _enemyHitEffectsDidFireThisFrameField = enemyHitEffectsType.GetField("didFireThisFrame", flags);
+        _enemyHitEffectsIsBlackThreadedField = enemyHitEffectsType.GetField("isBlackThreaded", flags);
+
+        var triggerEnterEventType = typeof(TriggerEnterEvent);
+        _triggerEnterEventActiveField = triggerEnterEventType.GetField("active", flags);
+        _triggerEnterEventIsDelayingProcessListField = triggerEnterEventType.GetField("isDelayingProcessList", flags);
+        _triggerEnterEventEnteredWhileInactiveField = triggerEnterEventType.GetField("enteredWhileInactive", flags);
+        _triggerEnterEventExitedWhileDelayedField = triggerEnterEventType.GetField("exitedWhileDelayed", flags);
+        _triggerEnterEventDelayRoutineField = triggerEnterEventType.GetField("delayRoutine", flags);
+
+        _damageTagHitsLeftTrackerField = healthManagerType.GetField("damageTagHitsLeftTracker", flags);
+        _tagDamageTakerField = healthManagerType.GetField("tagDamageTaker", flags);
+        _runningSingleLagHitsField = healthManagerType.GetField("runningSingleLagHits", flags);
+        _lastAttackTypeField = healthManagerType.GetField("lastAttackType", flags);
+        _lastHitInstanceField = healthManagerType.GetField("lastHitInstance", flags);
+
+        var bouncePodType = typeof(BouncePod);
+        var staticFlags = BindingFlags.NonPublic | BindingFlags.Static;
+        _bouncePodLastAttackCountField = bouncePodType.GetField("_lastAttackCount", staticFlags);
 
         var randomEventType = typeof(RandomEvent);
         _randomEventLastEventIndexField = randomEventType.GetField("lastEventIndex", flags);
@@ -387,6 +428,8 @@ public static class EpisodeResetter
             BossProjectileManager.Instance.ClearProjectileCache();
         }
         ClearActiveProjectiles();
+
+        ResetStaticState();
 
         yield return new WaitForEndOfFrame();
         yield return new WaitForEndOfFrame();
@@ -645,6 +688,8 @@ public static class EpisodeResetter
         _startWithAttackField?.SetValue(hero, false);
         _startWithToolThrowField?.SetValue(hero, false);
         _startWithWallJumpField?.SetValue(hero, false);
+        _queuedWallJumpInterruptField?.SetValue(hero, false);
+        _queuedAutoThrowToolField?.SetValue(hero, false);
 
         hero.hero_state = ActorStates.idle;
 
@@ -701,6 +746,10 @@ public static class EpisodeResetter
 
             ResetHealthManagerTimers(boss);
 
+            boss.CancelAllLagHits();
+
+            StopAllBossCoroutines(boss);
+
             ResetAllBossFsms(boss);
 
             ResetBossStunState(boss);
@@ -716,10 +765,59 @@ public static class EpisodeResetter
             ResetBossAlertRange(boss);
 
             ResetBossDeathEffects(boss);
+
+            ResetBossHitEffects(boss);
+
+            ResetBossAnimators(boss);
+
+            ResetBossParticleSystems(boss);
+
+            ResetBossAudioSources(boss);
+
+            ResetBossSpriteFlash(boss);
+
+            ResetBossTriggerEvents(boss);
+
+            ResetBossDamageEnemies(boss);
         }
         else
         {
             BossStateManager.FindBoss();
+        }
+    }
+
+    private static void ResetBossDamageEnemies(HealthManager boss)
+    {
+        var damageEnemiesComponents = boss.GetComponentsInChildren<DamageEnemies>(true);
+        foreach (var damageEnemies in damageEnemiesComponents)
+        {
+            if (damageEnemies != null)
+            {
+                damageEnemies.ClearLists();
+                damageEnemies.ClearPreventDamage();
+            }
+        }
+    }
+
+    private static void StopAllBossCoroutines(HealthManager boss)
+    {
+        var allMonoBehaviours = boss.GetComponentsInChildren<MonoBehaviour>(true);
+        foreach (var mb in allMonoBehaviours)
+        {
+            if (mb != null && mb.gameObject.activeInHierarchy)
+            {
+                mb.StopAllCoroutines();
+            }
+        }
+    }
+
+    private static void ResetBossHitEffects(HealthManager boss)
+    {
+        var hitEffects = boss.GetComponentsInChildren<EnemyHitEffectsRegular>(true);
+        foreach (var hitEffect in hitEffects)
+        {
+            _enemyHitEffectsDidFireThisFrameField?.SetValue(hitEffect, false);
+            _enemyHitEffectsIsBlackThreadedField?.SetValue(hitEffect, false);
         }
     }
 
@@ -776,6 +874,8 @@ public static class EpisodeResetter
 
     private static void ResetBossDamageHero(HealthManager boss)
     {
+        DamageHero.ResetRecordedDamagers();
+
         var damageHeroes = boss.GetComponentsInChildren<DamageHero>(true);
         foreach (var damageHero in damageHeroes)
         {
@@ -794,14 +894,20 @@ public static class EpisodeResetter
 
     private static void ResetBossRecoil(HealthManager boss)
     {
-        var recoil = boss.GetComponent<Recoil>();
-        if (recoil != null)
+        var recoils = boss.GetComponentsInChildren<Recoil>(true);
+        foreach (var recoil in recoils)
         {
-            _recoilStateField?.SetValue(recoil, 0);
-            _recoilTimeRemainingField?.SetValue(recoil, 0f);
-            _recoilSpeedField?.SetValue(recoil, 0f);
-            _isRecoilSweepingField?.SetValue(recoil, false);
-            _previousRecoilAngleField?.SetValue(recoil, 0f);
+            if (recoil != null)
+            {
+                _recoilStateField?.SetValue(recoil, 0);
+                _recoilTimeRemainingField?.SetValue(recoil, 0f);
+                _recoilSpeedField?.SetValue(recoil, 0f);
+                _isRecoilSweepingField?.SetValue(recoil, false);
+                _previousRecoilAngleField?.SetValue(recoil, 0f);
+                recoil.SkipFreezingByController = false;
+                recoil.IsLeftBlocked = false;
+                recoil.IsRightBlocked = false;
+            }
         }
     }
 
@@ -817,8 +923,83 @@ public static class EpisodeResetter
         _hasTakenDamageField?.SetValue(boss, false);
         _directionOfLastAttackField?.SetValue(boss, 0);
         _notifiedBattleSceneField?.SetValue(boss, false);
+        _invincibleField?.SetValue(boss, false);
+        _invincibleFromDirectionField?.SetValue(boss, 0);
+
+        var damageTagHitsTracker = _damageTagHitsLeftTrackerField?.GetValue(boss) as System.Collections.IDictionary;
+        damageTagHitsTracker?.Clear();
+
+        var tagDamageTaker = _tagDamageTakerField?.GetValue(boss) as TagDamageTaker;
+        tagDamageTaker?.ClearTagDamage();
+
+        var runningSingleLagHits = _runningSingleLagHitsField?.GetValue(boss) as System.Collections.IDictionary;
+        runningSingleLagHits?.Clear();
+
+        _lastAttackTypeField?.SetValue(boss, AttackTypes.Generic);
+        _lastHitInstanceField?.SetValue(boss, default(HitInstance));
 
         boss.tinkTimer = 0f;
+    }
+
+    private static void ResetBossAnimators(HealthManager boss)
+    {
+        var animators = boss.GetComponentsInChildren<Animator>(true);
+        foreach (var animator in animators)
+        {
+            if (animator != null && animator.runtimeAnimatorController != null)
+            {
+                animator.Rebind();
+                animator.Update(0f);
+            }
+        }
+    }
+
+    private static void ResetBossParticleSystems(HealthManager boss)
+    {
+        var particleSystems = boss.GetComponentsInChildren<ParticleSystem>(true);
+        foreach (var ps in particleSystems)
+        {
+            if (ps != null)
+            {
+                ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                ps.Clear(true);
+            }
+        }
+    }
+
+    private static void ResetBossAudioSources(HealthManager boss)
+    {
+        var audioSources = boss.GetComponentsInChildren<AudioSource>(true);
+        foreach (var audio in audioSources)
+        {
+            if (audio != null && audio.isPlaying)
+            {
+                audio.Stop();
+            }
+        }
+    }
+
+    private static void ResetBossTriggerEvents(HealthManager boss)
+    {
+        var triggerEvents = boss.GetComponentsInChildren<TriggerEnterEvent>(true);
+        foreach (var triggerEvent in triggerEvents)
+        {
+            var delayRoutine = _triggerEnterEventDelayRoutineField?.GetValue(triggerEvent) as Coroutine;
+            if (delayRoutine != null)
+            {
+                triggerEvent.StopCoroutine(delayRoutine);
+                _triggerEnterEventDelayRoutineField?.SetValue(triggerEvent, null);
+            }
+
+            _triggerEnterEventActiveField?.SetValue(triggerEvent, false);
+            _triggerEnterEventIsDelayingProcessListField?.SetValue(triggerEvent, false);
+
+            var enteredList = _triggerEnterEventEnteredWhileInactiveField?.GetValue(triggerEvent) as System.Collections.IList;
+            enteredList?.Clear();
+
+            var exitedList = _triggerEnterEventExitedWhileDelayedField?.GetValue(triggerEvent) as System.Collections.IList;
+            exitedList?.Clear();
+        }
     }
 
     private static void ResetAllBossFsms(HealthManager boss)
@@ -829,6 +1010,8 @@ public static class EpisodeResetter
         {
             try
             {
+                fsm.Fsm.KillDelayedEvents();
+
                 var fsmName = fsm.FsmName;
                 var objName = fsm.gameObject.name;
 
@@ -1100,6 +1283,19 @@ public static class EpisodeResetter
                 obj.SetActive(false);
             }
         }
+    }
+
+    private static void ResetStaticState()
+    {
+        StaticVariableList.Clear();
+        HeroInvincibilitySource.Clear();
+        HeroUtility.Reset();
+        ObjectPool.PurgeRecentRecycled();
+        AutoRecycleSelf.RecycleActiveRecyclers();
+        ToolItemLimiter.ClearStatic();
+        TrackingTrail.ClearStatic();
+        QuestTargetCounter.ClearStatic();
+        _bouncePodLastAttackCountField?.SetValue(null, -1);
     }
 
     public static IEnumerator ResetEpisode()
