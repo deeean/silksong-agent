@@ -26,9 +26,11 @@ A reinforcement learning agent for Hollow Knight: Silksong boss fights.
 ### 2. Save File Setup
 
 Copy [resources/user1.dat](resources/user1.dat) to:
-```
-%USERPROFILE%\AppData\LocalLow\Team Cherry\Hollow Knight Silksong\default
-```
+
+| Platform | Path |
+|----------|------|
+| Windows | `%USERPROFILE%\AppData\LocalLow\Team Cherry\Hollow Knight Silksong\default` |
+| Linux | `~/.config/unity3d/Team Cherry/Hollow Knight Silksong/default` |
 
 ### 3. Environment Configuration
 
@@ -59,6 +61,15 @@ uv run train.py --n_envs 4 --checkpoint ./models/rl_model_1000_steps.zip
 ```
 
 > **Tip**: Use `-nofx` mode (enabled by default in training) for faster step processing.
+
+#### Linux
+
+On Linux, using Xvfb (virtual framebuffer) significantly improves training speed:
+
+```bash
+sudo apt install xvfb
+xvfb-run -a uv run train.py --n_envs 4
+```
 
 ### Evaluation
 

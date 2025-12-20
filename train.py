@@ -26,6 +26,9 @@ def reset_env_id_counter():
 
 
 def _make_env(env_id: int, time_scale: float = 1.0, nofx: bool = False):
+    import torch
+    torch.set_num_threads(1)
+
     env = SilksongBossEnv(env_id, time_scale=time_scale, nofx=nofx)
     env = Monitor(env)
     return env

@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -280,11 +281,18 @@ public class SharedMemoryManager : MonoBehaviour
     private const int StateOffset = 0;
     private const int GameStateOffset = 4;
     private const int CommandOffset = 1024;
+    private const int EventOffset = 2048;
+
+    private static readonly bool IsWindows = Application.platform == RuntimePlatform.WindowsPlayer ||
+                                              Application.platform == RuntimePlatform.WindowsEditor;
+    private static readonly bool IsLinux = Application.platform == RuntimePlatform.LinuxPlayer ||
+                                            Application.platform == RuntimePlatform.LinuxEditor;
 
     private MemoryMappedFile memoryMappedFile;
     private MemoryMappedViewAccessor accessor;
     private CommandData commandData;
-    private EventWaitHandle stateEvent;
+
+    private EventWaitHandle stateEventWindows;
 
     private string GetMemoryName()
     {
@@ -300,6 +308,12 @@ public class SharedMemoryManager : MonoBehaviour
         return $"{EventNameBase}_{Plugin.InstanceId}";
     }
 
+    private string GetSharedMemoryPath()
+    {
+        var memoryName = GetMemoryName();
+        return $"/dev/shm/{memoryName}";
+    }
+
     private void Awake()
     {
         if (Instance != null && Instance != this)
@@ -312,12 +326,60 @@ public class SharedMemoryManager : MonoBehaviour
         DontDestroyOnLoad(gameObject);
 
         var memoryName = GetMemoryName();
-        memoryMappedFile = MemoryMappedFile.CreateOrOpen(memoryName, MemorySize);
+
+        if (IsLinux)
+        {
+            var shmPath = GetSharedMemoryPath();
+            try
+            {
+                var fileStream = new FileStream(shmPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite);
+                fileStream.SetLength(MemorySize);
+                memoryMappedFile = MemoryMappedFile.CreateFromFile(fileStream, null, MemorySize, MemoryMappedFileAccess.ReadWrite, HandleInheritability.None, false);
+                Plugin.Logger.LogInfo($"Opened shared memory (Linux): {shmPath}");
+            }
+            catch (Exception e)
+            {
+                Plugin.Logger.LogError($"Failed to open shared memory: {e.Message}");
+            }
+        }
+        else
+        {
+            memoryMappedFile = MemoryMappedFile.CreateOrOpen(memoryName, MemorySize);
+            Plugin.Logger.LogInfo($"Opened shared memory (Windows): {memoryName}");
+        }
+
         accessor = memoryMappedFile.CreateViewAccessor();
 
         var eventName = GetEventName();
-        stateEvent = new EventWaitHandle(false, EventResetMode.ManualReset, eventName);
-        Plugin.Logger.LogInfo($"Opened state event: {eventName}");
+
+        if (IsWindows)
+        {
+            stateEventWindows = new EventWaitHandle(false, EventResetMode.ManualReset, eventName);
+            Plugin.Logger.LogInfo($"Opened state event (Windows): {eventName}");
+        }
+        else if (IsLinux)
+        {
+            Plugin.Logger.LogInfo($"Using shared memory event (Linux)");
+        }
+    }
+
+    private void SetEvent()
+    {
+        if (IsWindows)
+        {
+            stateEventWindows?.Set();
+        }
+        else if (IsLinux)
+        {
+            try
+            {
+                accessor.Write(EventOffset, 1);
+            }
+            catch (Exception e)
+            {
+                Plugin.Logger.LogError($"Failed to set event in shared memory: {e.Message}");
+            }
+        }
     }
 
     public void WriteState(StateType state)
@@ -325,7 +387,7 @@ public class SharedMemoryManager : MonoBehaviour
         try
         {
             accessor.Write(StateOffset, (int)state);
-            stateEvent.Set();
+            SetEvent();
         }
         catch (Exception e)
         {
@@ -427,7 +489,7 @@ public class SharedMemoryManager : MonoBehaviour
 
     private void OnDestroy()
     {
-        stateEvent?.Dispose();
+        stateEventWindows?.Dispose();
         accessor?.Dispose();
         memoryMappedFile?.Dispose();
     }

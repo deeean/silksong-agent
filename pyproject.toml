@@ -12,7 +12,7 @@ dependencies = [
     "optuna>=4.6.0",
     "pygame>=2.6.1",
     "python-dotenv>=1.2.1",
-    "pywin32>=311",
+    "pywin32>=311; sys_platform == 'win32'",
     "rich>=14.2.0",
     "sb3-contrib>=2.7.0",
     "stable-baselines3>=2.7.0",
