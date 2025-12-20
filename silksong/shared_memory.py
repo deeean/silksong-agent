@@ -1,10 +1,13 @@
 import atexit
 import ctypes
+import mmap
 import os
+import platform
 import shutil
 import signal
 import struct
 import subprocess
+import time
 from enum import IntEnum
 from multiprocessing import shared_memory
 from dataclasses import dataclass
@@ -12,18 +15,21 @@ from pathlib import Path
 
 import numpy as np
 
-kernel32 = ctypes.windll.kernel32
+IS_WINDOWS = platform.system() == "Windows"
+IS_LINUX = platform.system() == "Linux"
 
-WAIT_OBJECT_0 = 0x00000000
-WAIT_TIMEOUT = 0x00000102
-WAIT_FAILED = 0xFFFFFFFF
-INFINITE = 0xFFFFFFFF
-
-EVENT_ALL_ACCESS = 0x1F0003
+if IS_WINDOWS:
+    kernel32 = ctypes.windll.kernel32
+    WAIT_OBJECT_0 = 0x00000000
+    WAIT_TIMEOUT = 0x00000102
+    WAIT_FAILED = 0xFFFFFFFF
+    INFINITE = 0xFFFFFFFF
+    EVENT_ALL_ACCESS = 0x1F0003
 
 
 class GameTimeoutError(Exception):
     pass
+
 
 from silksong.constants import (
     PLAYER_MAX_HEALTH,
@@ -180,6 +186,7 @@ class SilkSongSharedMemory:
     STATE_OFFSET = 0
     GAME_STATE_OFFSET = 4
     COMMAND_OFFSET = 1024
+    EVENT_OFFSET = 2048
 
     GAME_STATE_FORMAT = (
         'ffff' + 'iiii' + 'f' + 'BBBBB' + 'xxx' +
@@ -192,22 +199,28 @@ class SilkSongSharedMemory:
     DEFAULT_TIMEOUT_MS = 30000
 
     @staticmethod
-    def _create_junction(link_path: Path, target_path: Path):
-        """Create a directory junction (works without admin)."""
-        subprocess.run(
-            ["cmd", "/c", "mklink", "/J", str(link_path), str(target_path)],
-            check=True,
-            capture_output=True
-        )
+    def _create_symlink(link_path: Path, target_path: Path):
+        """Create a symbolic link (cross-platform)."""
+        if IS_WINDOWS:
+            subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(link_path), str(target_path)],
+                check=True,
+                capture_output=True
+            )
+        else:
+            os.symlink(target_path, link_path)
 
     @staticmethod
     def _create_hardlink(link_path: Path, target_path: Path):
-        """Create a hard link for files (works without admin, same volume only)."""
-        subprocess.run(
-            ["cmd", "/c", "mklink", "/H", str(link_path), str(target_path)],
-            check=True,
-            capture_output=True
-        )
+        """Create a hard link for files (cross-platform)."""
+        if IS_WINDOWS:
+            subprocess.run(
+                ["cmd", "/c", "mklink", "/H", str(link_path), str(target_path)],
+                check=True,
+                capture_output=True
+            )
+        else:
+            os.link(target_path, link_path)
 
     @staticmethod
     def get_game_path(env_id: int) -> str:
@@ -235,29 +248,45 @@ class SilkSongSharedMemory:
         folders_to_link = [
             data_folder_name,
             "MonoBleedingEdge",
-            "D3D12",
         ]
+        if IS_WINDOWS:
+            folders_to_link.append("D3D12")
+
         for folder in folders_to_link:
             src = base_dir / folder
             dst = instance_dir / folder
             if src.exists() and not dst.exists():
-                SilkSongSharedMemory._create_junction(dst, src)
+                SilkSongSharedMemory._create_symlink(dst, src)
 
-        files_to_link = [
-            "UnityPlayer.dll",
-            "UnityCrashHandler64.exe",
-        ]
+        if IS_WINDOWS:
+            files_to_link = [
+                "UnityPlayer.dll",
+                "UnityCrashHandler64.exe",
+            ]
+        else:
+            files_to_link = [
+                "UnityPlayer.so",
+            ]
+
         for filename in files_to_link:
             src = base_dir / filename
             dst = instance_dir / filename
             if src.exists() and not dst.exists():
                 SilkSongSharedMemory._create_hardlink(dst, src)
 
-        files_to_copy = [
-            "winhttp.dll",
-            "doorstop_config.ini",
-            ".doorstop_version",
-        ]
+        if IS_WINDOWS:
+            files_to_copy = [
+                "winhttp.dll",
+                "doorstop_config.ini",
+                ".doorstop_version",
+            ]
+        else:
+            files_to_copy = [
+                "libdoorstop.so",
+                "doorstop_config.ini",
+                ".doorstop_version",
+            ]
+
         for filename in files_to_copy:
             src = base_dir / filename
             dst = instance_dir / filename
@@ -275,7 +304,7 @@ class SilkSongSharedMemory:
                 src = base_bepinex / folder
                 dst = instance_bepinex / folder
                 if src.exists() and not dst.exists():
-                    SilkSongSharedMemory._create_junction(dst, src)
+                    SilkSongSharedMemory._create_symlink(dst, src)
 
             config_src = base_bepinex / "config"
             config_dst = instance_bepinex / "config"
@@ -286,6 +315,61 @@ class SilkSongSharedMemory:
 
         print(f"[Env {env_id}] Created instance folder")
         return str(instance_exe)
+
+    def _create_event(self, event_name: str):
+        """Create an event handle (cross-platform)."""
+        if IS_WINDOWS:
+            handle = kernel32.CreateEventW(None, True, False, event_name)
+            if handle == 0:
+                raise RuntimeError(f"Failed to create event: {event_name}")
+            return handle
+        else:
+            struct.pack_into('i', self.buf, self.EVENT_OFFSET, 0)
+            return None
+
+    def _set_event(self):
+        """Signal the event (cross-platform)."""
+        if IS_WINDOWS:
+            kernel32.SetEvent(self.event_handle)
+        else:
+            struct.pack_into('i', self.buf, self.EVENT_OFFSET, 1)
+
+    def _reset_event(self):
+        """Reset the event (cross-platform)."""
+        if IS_WINDOWS:
+            kernel32.ResetEvent(self.event_handle)
+        else:
+            struct.pack_into('i', self.buf, self.EVENT_OFFSET, 0)
+
+    def _wait_for_event(self, timeout_ms: int) -> bool:
+        """Wait for event signal with timeout. Returns True if signaled, False if timeout."""
+        if IS_WINDOWS:
+            result = kernel32.WaitForSingleObject(self.event_handle, timeout_ms)
+            if result == WAIT_TIMEOUT:
+                return False
+            elif result == WAIT_FAILED:
+                error = ctypes.get_last_error()
+                raise RuntimeError(f"[Env {self.id}] WaitForSingleObject failed with error: {error}")
+            return True
+        else:
+            start_time = time.monotonic()
+            timeout_sec = timeout_ms / 1000.0
+
+            while True:
+                event_val = struct.unpack_from('i', self.buf, self.EVENT_OFFSET)[0]
+                if event_val == 1:
+                    return True
+
+                if time.monotonic() - start_time >= timeout_sec:
+                    return False
+
+    def _close_event(self):
+        """Close the event handle (cross-platform)."""
+        if IS_WINDOWS:
+            if self.event_handle is not None:
+                kernel32.CloseHandle(self.event_handle)
+        else:
+            pass
 
     def __init__(self, id: int, time_scale: float = 1.0, nofx: bool = False, timeout_ms: int = None):
         self.id = id
@@ -302,26 +386,38 @@ class SilkSongSharedMemory:
         shm_name = self.MEMORY_NAME + f"_{id}"
         event_name = self.EVENT_NAME + f"_{id}"
 
-        try:
-            self.shm = shared_memory.SharedMemory(
-                name=shm_name,
-                create=True,
-                size=self.MEMORY_SIZE,
-            )
-            self.shm.buf[:] = bytes(self.MEMORY_SIZE)
-            self._owns_shm = True
-            print(f"[Env {id}] Created shared memory: {shm_name}")
-        except FileExistsError:
-            self.shm = shared_memory.SharedMemory(
-                name=shm_name,
-                create=False,
-            )
-            self._owns_shm = False
-            print(f"[Env {id}] Connected to existing shared memory: {shm_name}")
+        if IS_LINUX:
+            shm_path = Path("/dev/shm") / shm_name
+            self._shm_path = shm_path
+            try:
+                self._shm_fd = os.open(str(shm_path), os.O_CREAT | os.O_RDWR, 0o666)
+                os.ftruncate(self._shm_fd, self.MEMORY_SIZE)
+                self._shm_mmap = mmap.mmap(self._shm_fd, self.MEMORY_SIZE)
+                self._shm_mmap[:] = bytes(self.MEMORY_SIZE)
+                self._owns_shm = True
+                print(f"[Env {id}] Created shared memory (Linux): {shm_path}")
+            except Exception as e:
+                raise RuntimeError(f"Failed to create shared memory: {e}")
+            self.shm = None
+        else:
+            try:
+                self.shm = shared_memory.SharedMemory(
+                    name=shm_name,
+                    create=True,
+                    size=self.MEMORY_SIZE,
+                )
+                self.shm.buf[:] = bytes(self.MEMORY_SIZE)
+                self._owns_shm = True
+                print(f"[Env {id}] Created shared memory: {shm_name}")
+            except FileExistsError:
+                self.shm = shared_memory.SharedMemory(
+                    name=shm_name,
+                    create=False,
+                )
+                self._owns_shm = False
+                print(f"[Env {id}] Connected to existing shared memory: {shm_name}")
 
-        self.event_handle = kernel32.CreateEventW(None, True, False, event_name)
-        if self.event_handle == 0:
-            raise RuntimeError(f"Failed to create event: {event_name}")
+        self.event_handle = self._create_event(event_name)
         print(f"[Env {id}] Created event: {event_name}")
 
         args = [game_path, "-id", str(id), "-timescale", str(time_scale)]
@@ -330,7 +426,18 @@ class SilkSongSharedMemory:
 
         print(f"[Env {id}] Launching game from: {game_path}")
         print(f"[Env {id}] Time scale: {time_scale}, NoFx: {nofx}")
-        self.process = subprocess.Popen(args)
+
+        env = os.environ.copy()
+        game_dir = Path(game_path).parent
+        if IS_LINUX:
+            env["LD_PRELOAD"] = "./libdoorstop.so"
+            env["LD_LIBRARY_PATH"] = f".:{env.get('LD_LIBRARY_PATH', '')}"
+            env["DOORSTOP_ENABLED"] = "1"
+            env["DOORSTOP_TARGET_ASSEMBLY"] = str(game_dir / "BepInEx" / "core" / "BepInEx.Preloader.dll")
+            env["__GL_SYNC_TO_VBLANK"] = "0"
+            env["vblank_mode"] = "0"
+
+        self.process = subprocess.Popen(args, env=env, cwd=game_dir)
 
         print(f"[Env {id}] Waiting for game to connect...")
         self.wait_for_state(StateType.READY, timeout_ms=60000)
@@ -338,11 +445,18 @@ class SilkSongSharedMemory:
 
         _active_instances.append(self)
 
+    @property
+    def buf(self):
+        if IS_LINUX:
+            return self._shm_mmap
+        else:
+            return self.shm.buf
+
     def read_state(self) -> StateType:
-        return struct.unpack_from('i', self.shm.buf, offset=self.STATE_OFFSET)[0]
+        return struct.unpack_from('i', self.buf, offset=self.STATE_OFFSET)[0]
 
     def read_game_state(self) -> GameState:
-        data = struct.unpack_from(self.GAME_STATE_FORMAT, self.shm.buf, offset=self.GAME_STATE_OFFSET)
+        data = struct.unpack_from(self.GAME_STATE_FORMAT, self.buf, offset=self.GAME_STATE_OFFSET)
 
         raycast_distances = np.array(data[27:59], dtype=np.float32)
         raycast_hit_types = np.array(data[59:91], dtype=np.float32)
@@ -387,18 +501,18 @@ class SilkSongSharedMemory:
                     skill: bool = False, heal: bool = False):
         offset = self.COMMAND_OFFSET
 
-        struct.pack_into('i', self.shm.buf, offset + 0, int(command_type))
-        struct.pack_into('B', self.shm.buf, offset + 4, 1 if left else 0)
-        struct.pack_into('B', self.shm.buf, offset + 5, 1 if right else 0)
-        struct.pack_into('B', self.shm.buf, offset + 6, 1 if up else 0)
-        struct.pack_into('B', self.shm.buf, offset + 7, 1 if down else 0)
-        struct.pack_into('B', self.shm.buf, offset + 8, 1 if jump else 0)
-        struct.pack_into('B', self.shm.buf, offset + 9, 1 if attack else 0)
-        struct.pack_into('B', self.shm.buf, offset + 10, 1 if dash else 0)
-        struct.pack_into('B', self.shm.buf, offset + 11, 1 if clawline else 0)
-        struct.pack_into('B', self.shm.buf, offset + 12, 1 if skill else 0)
-        struct.pack_into('B', self.shm.buf, offset + 13, 1 if heal else 0)
-        struct.pack_into('i', self.shm.buf, offset + 14, 1)
+        struct.pack_into('i', self.buf, offset + 0, int(command_type))
+        struct.pack_into('B', self.buf, offset + 4, 1 if left else 0)
+        struct.pack_into('B', self.buf, offset + 5, 1 if right else 0)
+        struct.pack_into('B', self.buf, offset + 6, 1 if up else 0)
+        struct.pack_into('B', self.buf, offset + 7, 1 if down else 0)
+        struct.pack_into('B', self.buf, offset + 8, 1 if jump else 0)
+        struct.pack_into('B', self.buf, offset + 9, 1 if attack else 0)
+        struct.pack_into('B', self.buf, offset + 10, 1 if dash else 0)
+        struct.pack_into('B', self.buf, offset + 11, 1 if clawline else 0)
+        struct.pack_into('B', self.buf, offset + 12, 1 if skill else 0)
+        struct.pack_into('B', self.buf, offset + 13, 1 if heal else 0)
+        struct.pack_into('i', self.buf, offset + 14, 1)
 
     def wait_for_state(self, state_type: StateType, timeout_ms: int = None):
         if timeout_ms is None:
@@ -410,22 +524,19 @@ class SilkSongSharedMemory:
         while True:
             current_state = self.read_state()
             if current_state == state_type:
-                struct.pack_into('i', self.shm.buf, self.STATE_OFFSET, int(StateType.READY))
-                kernel32.ResetEvent(self.event_handle)
+                struct.pack_into('i', self.buf, self.STATE_OFFSET, int(StateType.READY))
+                self._reset_event()
                 break
 
-            result = kernel32.WaitForSingleObject(self.event_handle, poll_interval_ms)
+            signaled = self._wait_for_event(poll_interval_ms)
 
-            if result == WAIT_TIMEOUT:
+            if not signaled:
                 elapsed_ms += poll_interval_ms
                 if elapsed_ms >= timeout_ms:
                     raise GameTimeoutError(
                         f"[Env {self.id}] Game did not respond within {timeout_ms}ms. "
                         f"Expected state: {state_type.name}, current state: {StateType(current_state).name}"
                     )
-            elif result == WAIT_FAILED:
-                error = ctypes.get_last_error()
-                raise RuntimeError(f"[Env {self.id}] WaitForSingleObject failed with error: {error}")
 
     def reset(self) -> GameState:
         self.send_command(CommandType.RESET)
@@ -466,9 +577,9 @@ class SilkSongSharedMemory:
                     pass
             self.process = None
 
-        self.shm.buf[:] = bytes(self.MEMORY_SIZE)
+        self.buf[:] = bytes(self.MEMORY_SIZE)
 
-        kernel32.ResetEvent(self.event_handle)
+        self._reset_event()
 
         game_path = self.get_game_path(self.id)
         args = [game_path, "-id", str(self.id), "-timescale", str(self.time_scale)]
@@ -476,7 +587,18 @@ class SilkSongSharedMemory:
             args.append("-nofx")
 
         print(f"[Env {self.id}] Launching game from: {game_path}")
-        self.process = subprocess.Popen(args)
+
+        env = os.environ.copy()
+        game_dir = Path(game_path).parent
+        if IS_LINUX:
+            env["LD_PRELOAD"] = "./libdoorstop.so"
+            env["LD_LIBRARY_PATH"] = f".:{env.get('LD_LIBRARY_PATH', '')}"
+            env["DOORSTOP_ENABLED"] = "1"
+            env["DOORSTOP_TARGET_ASSEMBLY"] = str(game_dir / "BepInEx" / "core" / "BepInEx.Preloader.dll")
+            env["__GL_SYNC_TO_VBLANK"] = "0"
+            env["vblank_mode"] = "0"
+
+        self.process = subprocess.Popen(args, env=env, cwd=game_dir)
 
         print(f"[Env {self.id}] Waiting for game to connect...")
         self.wait_for_state(StateType.READY, timeout_ms=60000)
@@ -497,18 +619,33 @@ class SilkSongSharedMemory:
                     pass
             self.process = None
 
-        if self.event_handle is not None:
-            try:
-                kernel32.CloseHandle(self.event_handle)
-            except Exception:
-                pass
-            self.event_handle = None
+        self._close_event()
+        self.event_handle = None
 
-        if hasattr(self, 'shm') and self.shm is not None:
-            try:
-                self.shm.close()
-                if self._owns_shm:
-                    self.shm.unlink()
-            except Exception:
-                pass
-            self.shm = None
+        if IS_LINUX:
+            if hasattr(self, '_shm_mmap') and self._shm_mmap is not None:
+                try:
+                    self._shm_mmap.close()
+                except Exception:
+                    pass
+                self._shm_mmap = None
+            if hasattr(self, '_shm_fd') and self._shm_fd is not None:
+                try:
+                    os.close(self._shm_fd)
+                except Exception:
+                    pass
+                self._shm_fd = None
+            if hasattr(self, '_shm_path') and self._shm_path is not None and self._owns_shm:
+                try:
+                    self._shm_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+        else:
+            if hasattr(self, 'shm') and self.shm is not None:
+                try:
+                    self.shm.close()
+                    if self._owns_shm:
+                        self.shm.unlink()
+                except Exception:
+                    pass
+                self.shm = None
