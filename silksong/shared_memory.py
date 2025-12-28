@@ -137,7 +137,7 @@ class GameState:
         rel_y = (self.boss_pos_y - self.player_pos_y) / (ARENA_MAX_Y - ARENA_MIN_Y)
         distance = np.sqrt((self.boss_pos_x - self.player_pos_x)**2 + (self.boss_pos_y - self.player_pos_y)**2) / self.MAX_DISTANCE
 
-        state_obs = np.array([
+        base_state = np.array([
             np.clip(norm_player_x, 0.0, 1.0),
             np.clip(norm_player_y, 0.0, 1.0),
             np.clip(norm_player_vel_x, 0.0, 1.0),
@@ -159,15 +159,29 @@ class GameState:
             np.clip(rel_x + 0.5, 0.0, 1.0),
             np.clip(rel_y + 0.5, 0.0, 1.0),
             np.clip(distance, 0.0, 1.0),
-            float(np.clip(self.boss_animation_state, 0, NUM_BOSS_ANIMATION_STATES - 1)),
-            np.clip(self.boss_animation_progress, 0.0, 1.0),
-            float(np.clip(self.player_animation_state, 0, NUM_PLAYER_ANIMATION_STATES - 1)),
-            np.clip(self.player_animation_progress, 0.0, 1.0),
         ], dtype=np.float32)
+
+        boss_anim_onehot = np.zeros(NUM_BOSS_ANIMATION_STATES, dtype=np.float32)
+        boss_anim_onehot[np.clip(self.boss_animation_state, 0, NUM_BOSS_ANIMATION_STATES - 1)] = 1.0
+
+        player_anim_onehot = np.zeros(NUM_PLAYER_ANIMATION_STATES, dtype=np.float32)
+        player_anim_onehot[np.clip(self.player_animation_state, 0, NUM_PLAYER_ANIMATION_STATES - 1)] = 1.0
+
+        state_obs = np.concatenate([
+            base_state,
+            boss_anim_onehot,
+            np.array([np.clip(self.boss_animation_progress, 0.0, 1.0)], dtype=np.float32),
+            player_anim_onehot,
+            np.array([np.clip(self.player_animation_progress, 0.0, 1.0)], dtype=np.float32),
+        ])
+
+        hit_type_onehot = np.zeros((NUM_RAYS, NUM_HIT_TYPES), dtype=np.float32)
+        hit_indices = np.clip(self.raycast_hit_types.astype(int), 0, NUM_HIT_TYPES - 1)
+        hit_type_onehot[np.arange(NUM_RAYS), hit_indices] = 1.0
 
         raycast_obs = np.concatenate([
             self.raycast_distances,
-            self.raycast_hit_types
+            hit_type_onehot.flatten()
         ])
 
         observe = np.concatenate([

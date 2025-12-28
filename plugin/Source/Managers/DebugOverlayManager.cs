@@ -167,6 +167,12 @@ public class DebugOverlayManager : MonoBehaviour
             showRaycasts = !showRaycasts;
             Plugin.Logger.LogInfo($"Raycast visualization: {(showRaycasts ? "ON" : "OFF")}");
         }
+
+        if (Input.GetKeyDown(KeyCode.F9))
+        {
+            CameraRenderScaledPatch.MinimalRendering = !CameraRenderScaledPatch.MinimalRendering;
+            Plugin.Logger.LogInfo($"Minimal rendering: {(CameraRenderScaledPatch.MinimalRendering ? "ON (16x16)" : "OFF (full resolution)")}");
+        }
     }
 
     private void OnGUI()
