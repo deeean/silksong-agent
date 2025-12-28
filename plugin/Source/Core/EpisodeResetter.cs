@@ -431,6 +431,8 @@ public static class EpisodeResetter
 
         ResetStaticState();
 
+        ClearHazardTriggers();
+
         yield return new WaitForEndOfFrame();
         yield return new WaitForEndOfFrame();
         yield return new WaitForEndOfFrame();
@@ -453,54 +455,21 @@ public static class EpisodeResetter
 
     private static void StopHeroCoroutines(HeroController hero)
     {
+        hero.StopAllCoroutines();
+
         var hazardRespawnRoutine = _hazardRespawnRoutineField?.GetValue(hero) as Coroutine;
         if (hazardRespawnRoutine != null)
         {
-            hero.StopCoroutine(hazardRespawnRoutine);
-            _hazardRespawnRoutineField.SetValue(hero, null);
+            GameManager.instance.StopCoroutine(hazardRespawnRoutine);
         }
 
-        var hazardInvulnRoutine = _hazardInvulnRoutineField?.GetValue(hero) as Coroutine;
-        if (hazardInvulnRoutine != null)
-        {
-            hero.StopCoroutine(hazardInvulnRoutine);
-            _hazardInvulnRoutineField.SetValue(hero, null);
-        }
-
-        var takeDamageCoroutine = _takeDamageCoroutineField?.GetValue(hero) as Coroutine;
-        if (takeDamageCoroutine != null)
-        {
-            hero.StopCoroutine(takeDamageCoroutine);
-            _takeDamageCoroutineField.SetValue(hero, null);
-        }
-
-        var recoilRoutine = _recoilRoutineField?.GetValue(hero) as Coroutine;
-        if (recoilRoutine != null)
-        {
-            hero.StopCoroutine(recoilRoutine);
-            _recoilRoutineField.SetValue(hero, null);
-        }
-
-        var tilemapTestCoroutine = _tilemapTestCoroutineField?.GetValue(hero) as Coroutine;
-        if (tilemapTestCoroutine != null)
-        {
-            hero.StopCoroutine(tilemapTestCoroutine);
-            _tilemapTestCoroutineField.SetValue(hero, null);
-        }
-
-        var frostedFadeOutRoutine = _frostedFadeOutRoutineField?.GetValue(hero) as Coroutine;
-        if (frostedFadeOutRoutine != null)
-        {
-            hero.StopCoroutine(frostedFadeOutRoutine);
-            _frostedFadeOutRoutineField.SetValue(hero, null);
-        }
-
-        var cocoonFloatRoutine = _cocoonFloatRoutineField?.GetValue(hero) as Coroutine;
-        if (cocoonFloatRoutine != null)
-        {
-            hero.StopCoroutine(cocoonFloatRoutine);
-            _cocoonFloatRoutineField.SetValue(hero, null);
-        }
+        _hazardRespawnRoutineField?.SetValue(hero, null);
+        _hazardInvulnRoutineField?.SetValue(hero, null);
+        _takeDamageCoroutineField?.SetValue(hero, null);
+        _recoilRoutineField?.SetValue(hero, null);
+        _tilemapTestCoroutineField?.SetValue(hero, null);
+        _frostedFadeOutRoutineField?.SetValue(hero, null);
+        _cocoonFloatRoutineField?.SetValue(hero, null);
 
         _doingHazardRespawnField?.SetValue(hero, false);
     }
@@ -1281,6 +1250,46 @@ public static class EpisodeResetter
                 obj.name.Contains("Projectile"))
             {
                 obj.SetActive(false);
+            }
+        }
+    }
+
+    private static void ClearHazardTriggers()
+    {
+        var allDamageHeroes = Object.FindObjectsByType<DamageHero>(FindObjectsSortMode.None);
+        foreach (var damageHero in allDamageHeroes)
+        {
+            if (damageHero == null) continue;
+
+            var nailClashRoutine = _nailClashRoutineField?.GetValue(damageHero) as Coroutine;
+            if (nailClashRoutine != null)
+            {
+                damageHero.StopCoroutine(nailClashRoutine);
+                _nailClashRoutineField.SetValue(damageHero, null);
+            }
+
+            _preventClashTinkField?.SetValue(damageHero, false);
+            _damageAllowedTimeField?.SetValue(damageHero, 0.0);
+            _cancelAttackField?.SetValue(damageHero, false);
+        }
+
+        DamageHero.ResetRecordedDamagers();
+
+        var hazardRespawnMarkers = Object.FindObjectsByType<HazardRespawnMarker>(FindObjectsSortMode.None);
+        foreach (var marker in hazardRespawnMarkers)
+        {
+            if (marker != null)
+            {
+                marker.StopAllCoroutines();
+            }
+        }
+
+        var hazardRespawnTriggers = Object.FindObjectsByType<HazardRespawnTrigger>(FindObjectsSortMode.None);
+        foreach (var trigger in hazardRespawnTriggers)
+        {
+            if (trigger != null)
+            {
+                trigger.StopAllCoroutines();
             }
         }
     }

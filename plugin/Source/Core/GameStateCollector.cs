@@ -81,13 +81,13 @@ public static class GameStateCollector
 
             state.bossFacingRight = (byte)(boss.transform.localScale.x > 0 ? 1 : 0);
 
-            var bossAnimator = boss.GetComponent<tk2dSpriteAnimator>();
+            var bossAnimator = BossStateManager.CurrentBossAnimator;
             if (bossAnimator != null)
             {
                 var clip = bossAnimator.CurrentClip;
                 if (clip != null && clip.frames != null)
                 {
-                    state.bossAnimationState = (int)BossAnimationMapper.GetAnimationState(clip.name);
+                    state.bossAnimationState = (int)BossStateManager.GetAnimationState(clip.name);
                     state.bossAnimationProgress = clip.frames.Length > 0
                         ? (float)bossAnimator.CurrentFrame / clip.frames.Length
                         : 0f;
@@ -107,8 +107,8 @@ public static class GameStateCollector
         else
         {
             state.bossAnimationState = (int)BossAnimationState.Idle;
-            state.bossFacingRight = 1;
             state.bossAnimationProgress = 0f;
+            state.bossFacingRight = 1;
         }
 
         state.episodeTime = Time.time - episodeStartTime;

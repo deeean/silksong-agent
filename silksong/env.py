@@ -7,9 +7,6 @@ from silksong.constants import (
     PLAYER_MAX_HEALTH,
     BOSS_MAX_HEALTH,
     MAX_EPISODE_STEPS,
-    SILK_COST_CLAWLINE,
-    SILK_COST_SKILL,
-    SILK_COST_HEAL,
     OBSERVATION_DIM,
 )
 
@@ -30,6 +27,7 @@ class SilksongBossEnv(gym.Env):
         self.prev_boss_health = 0
         self.prev_player_health = 0
         self.prev_player_silk = 0
+        self.current_silk = 0
         self.total_steps = 0
 
         self.attack_count = 0
@@ -53,6 +51,7 @@ class SilksongBossEnv(gym.Env):
         self.prev_boss_health = game_state.boss_health
         self.prev_player_health = game_state.player_health
         self.prev_player_silk = game_state.player_silk
+        self.current_silk = game_state.player_silk
         self.total_steps = 0
 
         self.attack_count = 0
@@ -91,6 +90,7 @@ class SilksongBossEnv(gym.Env):
         self.prev_boss_health = game_state.boss_health
         self.prev_player_health = game_state.player_health
         self.prev_player_silk = game_state.player_silk
+        self.current_silk = game_state.player_silk
 
         info = self._get_info(game_state, terminated or truncated)
 
@@ -114,31 +114,60 @@ class SilksongBossEnv(gym.Env):
     def _calculate_reward(self, game_state: GameState) -> float:
         boss_dmg = self.prev_boss_health - game_state.boss_health
         player_dmg = self.prev_player_health - game_state.player_health
+        health_gained = game_state.player_health - self.prev_player_health
+
+        hurt = player_dmg > 0
+        hit = boss_dmg > 0
+        boss_stunned = game_state.boss_animation_state == 16
+        silk_used = self.prev_player_silk - game_state.player_silk
+
+        if hit:
+            self.attack_count += 1
+        if hurt:
+            self.hurt_count += 1
 
         reward = 0.0
 
-        if boss_dmg > 0:
-            reward += (boss_dmg / BOSS_MAX_HEALTH)
-            self.attack_count += 1
-        if player_dmg > 0:
-            reward -= (player_dmg / PLAYER_MAX_HEALTH) * 0.2
-            self.hurt_count += 1
+        if hit:
+            if boss_stunned:
+                reward += 2.0
+            else:
+                reward += 1.0
+        if hurt:
+            if boss_stunned:
+                reward -= 2.0
+            else:
+                reward -= 1.0
 
-        distance = np.sqrt(
-            (game_state.player_pos_x - game_state.boss_pos_x) ** 2 +
-            (game_state.player_pos_y - game_state.boss_pos_y) ** 2
-        )
+        if silk_used > 0:
+            reward -= 0.05 * silk_used
 
-        too_far = distance > 15.0
-        too_close = distance < 1.0
+        if health_gained > 0:
+            reward += health_gained
+            self.heal_count += 1
 
-        if too_far:
+        if not (hurt or hit or health_gained > 0):
             reward -= 0.001
-        elif too_close:
+
+        rel_x = game_state.boss_pos_x - game_state.player_pos_x
+        rel_y = game_state.boss_pos_y - game_state.player_pos_y
+        distance_to_boss = np.sqrt(rel_x ** 2 + rel_y ** 2)
+
+        if distance_to_boss > 15.0:
+            reward -= 0.001
+        if distance_to_boss < 1.0:
             reward -= 0.001
 
-        if boss_dmg == 0 and player_dmg == 0:
-            reward -= 0.0001
+        win = game_state.boss_health <= 0
+        lose = game_state.player_health <= 0
+
+        if win:
+            health_bonus = game_state.player_health / PLAYER_MAX_HEALTH
+            time_bonus = min(1.0, 100.0 / max(game_state.episode_time, 1.0))
+            reward += health_bonus + time_bonus
+        elif lose:
+            boss_remaining = game_state.boss_health / BOSS_MAX_HEALTH
+            reward -= boss_remaining
 
         return reward
 

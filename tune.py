@@ -22,7 +22,7 @@ from silksong import MultiHeadFeatureExtractor
 
 def get_hyperparameters(trial: optuna.Trial) -> Dict[str, Any]:
     learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-3, log=True)
-    n_steps = trial.suggest_categorical("n_steps", [512, 1024, 2048, 4096])
+    n_steps = trial.suggest_categorical("n_steps", [512, 1024, 2048, 4096, 8192])
     batch_size = trial.suggest_categorical("batch_size", [64, 128, 256, 512])
     n_epochs = trial.suggest_int("n_epochs", 3, 10)
     gamma = trial.suggest_float("gamma", 0.95, 0.999)
@@ -31,9 +31,9 @@ def get_hyperparameters(trial: optuna.Trial) -> Dict[str, Any]:
     ent_coef = trial.suggest_float("ent_coef", 0.001, 0.1, log=True)
     vf_coef = trial.suggest_float("vf_coef", 0.3, 0.7)
     max_grad_norm = trial.suggest_float("max_grad_norm", 0.3, 1.0)
-    features_dim = trial.suggest_categorical("features_dim", [128, 256, 512])
-    pi_layers = trial.suggest_categorical("pi_layers", [64, 128, 256])
-    vf_layers = trial.suggest_categorical("vf_layers", [64, 128, 256])
+    features_dim = trial.suggest_categorical("features_dim", [128, 256])
+    pi_layers = trial.suggest_categorical("pi_layers", [128, 256])
+    vf_layers = trial.suggest_categorical("vf_layers", [128, 256])
 
     return {
         "learning_rate": learning_rate,
@@ -53,13 +53,12 @@ def get_hyperparameters(trial: optuna.Trial) -> Dict[str, Any]:
 
 
 class TrialEvalCallback(EvalCallback):
-    """Callback for evaluating and pruning trials."""
-
     def __init__(self, trial: optuna.Trial, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.trial = trial
         self.eval_idx = 0
         self.is_pruned = False
+        self.all_mean_rewards = []
 
     def _on_step(self) -> bool:
         result = super()._on_step()
@@ -76,6 +75,13 @@ class TrialEvalCallback(EvalCallback):
     def _on_event(self) -> None:
         super()._on_event()
         self.eval_idx += 1
+        if self.last_mean_reward is not None:
+            self.all_mean_rewards.append(self.last_mean_reward)
+
+    def get_average_reward(self) -> float:
+        if not self.all_mean_rewards:
+            return float('-inf')
+        return sum(self.all_mean_rewards) / len(self.all_mean_rewards)
 
 
 def objective(
@@ -128,7 +134,7 @@ def objective(
         vf_coef=params["vf_coef"],
         max_grad_norm=params["max_grad_norm"],
         verbose=0,
-        device="cpu",
+        device="cuda" if torch.cuda.is_available() else "cpu",
         policy_kwargs=policy_kwargs,
     )
 
@@ -159,8 +165,8 @@ def objective(
     if eval_callback.is_pruned:
         raise optuna.TrialPruned()
 
-    mean_reward = eval_callback.best_mean_reward
-    print(f"\nTrial {trial.number} finished with mean reward: {mean_reward:.4f}")
+    mean_reward = eval_callback.get_average_reward()
+    print(f"\nTrial {trial.number} finished with average reward: {mean_reward:.4f}")
 
     return mean_reward
 
@@ -168,11 +174,11 @@ def objective(
 def tune(
     n_trials: int = 30,
     n_envs: int = 1,
-    timesteps_per_trial: int = 200_000,
+    timesteps_per_trial: int = 300_000,
     eval_freq: int = 50_000,
-    n_eval_episodes: int = 5,
+    n_eval_episodes: int = 10,
     time_scale: float = 4.0,
-    study_name: str = "ppo_silksong",
+    study_name: str = "silksong",
     storage: str = None,
     output_dir: str = "./hyperparameters",
 ):
@@ -256,14 +262,14 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Hyperparameter tuning for PPO")
-    parser.add_argument("--n_trials", type=int, default=30, help="Number of trials")
+    parser.add_argument("--n_trials", type=int, default=20, help="Number of trials")
     parser.add_argument("--n_envs", type=int, default=1, help="Number of parallel environments")
-    parser.add_argument("--timesteps", type=int, default=200_000, help="Timesteps per trial")
-    parser.add_argument("--eval_freq", type=int, default=50_000, help="Evaluation frequency")
+    parser.add_argument("--timesteps", type=int, default=100_000, help="Timesteps per trial")
+    parser.add_argument("--eval_freq", type=int, default=20_000, help="Evaluation frequency")
     parser.add_argument("--n_eval_episodes", type=int, default=10, help="Episodes per evaluation")
     parser.add_argument("--time_scale", type=float, default=4.0)
-    parser.add_argument("--study_name", type=str, default="ppo_silksong")
-    parser.add_argument("--storage", type=str, default=None, help="Optuna storage URL (e.g., sqlite:///study.db)")
+    parser.add_argument("--study_name", type=str, default="silksong")
+    parser.add_argument("--storage", type=str, default=None, help="Optuna storage URL (e.g., sqlite:///study.db.db)")
     parser.add_argument("--output_dir", type=str, default="./hyperparameters")
 
     args = parser.parse_args()

@@ -10,6 +10,7 @@ dependencies = [
     "matplotlib>=3.10.7",
     "numpy>=2.2.6",
     "optuna>=4.6.0",
+    "optuna-dashboard>=0.20.0",
     "pygame>=2.6.1",
     "python-dotenv>=1.2.1",
     "pywin32>=311; sys_platform == 'win32'",

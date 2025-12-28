@@ -26,17 +26,6 @@ public class NoFxManager : MonoBehaviour
         }
     }
 
-    private void Update()
-    {
-        if (!CommandLineArgs.NoFx) return;
-
-        if (Input.GetKeyDown(KeyCode.F9))
-        {
-            CameraRenderScaledPatch.MinimalRendering = !CameraRenderScaledPatch.MinimalRendering;
-            Plugin.Logger.LogInfo($"Minimal rendering: {CameraRenderScaledPatch.MinimalRendering}");
-        }
-    }
-
     private void ApplyNoFxSettings()
     {
         QualitySettings.vSyncCount = 0;
